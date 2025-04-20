@@ -58,15 +58,22 @@
         <div class="branch-header">
           <h3>{{ branch.Title }}</h3>
           <div class="branch-actions">
-            <button @click="editBranch(branch)" class="btn-small">Edit</button>
-            <button v-if="!branch.IsEnd" @click="addSubBranch(branch)" class="btn-small">
-              Add Sub-branch
+            <button @click="editBranch(branch)" class="btn-small" title="Edit branch">✏️</button>
+            <button
+              v-if="!branch.IsEnd"
+              @click="addSubBranch(branch)"
+              class="btn-small"
+              title="Add sub-branch"
+            >
+              ➕
             </button>
-            <button @click="deleteBranch(branch)" class="btn-small">Delete</button>
+            <button @click="deleteBranch(branch)" class="btn-small" title="Delete branch">
+              🗑️
+            </button>
           </div>
         </div>
         <div class="branch-content">
-          <p>{{ branch.Text }}</p>
+          <p :class="{ truncated: branch.Text.length > 100 }">{{ truncateText(branch.Text) }}</p>
         </div>
       </div>
     </div>
@@ -389,6 +396,11 @@ const isWarningBranch = (branch: AdventureBranch): boolean => {
   return !branch.IsEnd && (!branch.Branches || branch.Branches.length === 0)
 }
 
+const truncateText = (text: string): string => {
+  if (text.length <= 100) return text
+  return text.substring(0, 97)
+}
+
 onMounted(() => {
   // Initialize branch positions if not set
   props.adventure.Branches.forEach((branch, index) => {
@@ -469,6 +481,11 @@ onMounted(() => {
   color: #856404;
 }
 
+.branch-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
 .branch-header {
   display: flex;
   justify-content: space-between;
@@ -480,16 +497,32 @@ onMounted(() => {
   color: #333;
   margin: 0;
   font-size: 1.1rem;
+  flex: 1;
+  margin-right: 0.5rem;
 }
 
 .branch-content {
   margin: 0.5rem 0;
   color: #333;
+  font-size: 0.9rem;
 }
 
 .branch-content p {
   margin: 0;
   color: #333;
+  line-height: 1.3;
+}
+
+.branch-content p.truncated::after {
+  content: '...';
+  color: #666;
+  font-weight: bold;
+  margin-left: 2px;
+}
+
+.editor-controls {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .btn {
@@ -502,26 +535,18 @@ onMounted(() => {
 }
 
 .btn-small {
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem;
   background-color: #f5f5f5;
   border: 1px solid #ddd;
   border-radius: 4px;
   cursor: pointer;
-  margin-left: 0.5rem;
   color: #333;
-}
-
-.btn:hover {
-  background-color: #45a049;
-}
-
-.btn-small:hover {
-  background-color: #e0e0e0;
-}
-
-.editor-controls {
   display: flex;
-  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.8rem;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .btn-danger {

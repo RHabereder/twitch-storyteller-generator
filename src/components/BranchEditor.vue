@@ -208,6 +208,10 @@ const closeModal = () => {
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.5rem;
 }
 
 .btn-secondary {
@@ -222,6 +226,11 @@ const closeModal = () => {
 
 .btn-secondary:hover {
   background-color: #e0e0e0;
+}
+
+.btn .icon {
+  font-size: 1.2rem;
+  line-height: 1;
 }
 
 .disabled-hint {
