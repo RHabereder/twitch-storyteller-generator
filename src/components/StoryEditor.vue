@@ -3,12 +3,17 @@
     <div class="editor-header">
       <h2>{{ adventure.Title }}</h2>
       <div class="editor-controls">
-        <button @click="addBranch" class="btn">Add Branch</button>
-        <button v-if="adventure.Branches.length > 0" @click="openExportModal" class="btn">
-          Export Story
+        <button v-if="adventure.Branches.length === 0" @click="addBranch" class="btn">
+          Add Root Branch
         </button>
-        <button @click="importStory" class="btn">Import Story</button>
-        <button @click="clearStory" class="btn btn-danger">Clear Story</button>
+        <button v-if="adventure.Branches.length > 0" @click="openExportModal" class="btn">
+          Export
+        </button>
+        <button @click="saveStory" class="btn" :class="{ 'btn-success': !hasUnsavedChanges }">
+          {{ hasUnsavedChanges ? 'Save' : 'Story Saved' }}
+        </button>
+        <button @click="importStory" class="btn">Import</button>
+        <button @click="clearStory" class="btn btn-danger">Clear</button>
         <input
           type="file"
           ref="fileInput"
@@ -22,6 +27,10 @@
     <div v-if="hasUnendedBranches" class="warning-banner">
       ⚠️ Warning: Some branches do not have endings! Please ensure all story paths lead to an
       ending.
+    </div>
+
+    <div v-if="hasUnsavedChanges" class="unsaved-changes-banner">
+      ⚠️ You have unsaved changes. Please save your story to preserve your progress.
     </div>
 
     <div class="story-canvas" ref="canvas">
@@ -97,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
 import type { Adventure } from '@/types/adventure'
 import type { AdventureBranch } from '@/types/adventureBranch'
 import ExportModal from './ExportModal.vue'
@@ -124,6 +133,120 @@ let startY = 0
 const isExportModalOpen = ref(false)
 const isBranchEditorOpen = ref(false)
 const selectedBranch = ref({} as AdventureBranch)
+
+const STORAGE_KEY = 'twitch-storyteller-state'
+const LAST_EXPORT_KEY = 'twitch-storyteller-last-export'
+
+// Track if there are unsaved changes
+const hasUnsavedChanges = ref(false)
+
+// Save state to local storage
+const saveState = (adventure: Adventure) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(adventure))
+  } catch (error) {
+    console.error('Error saving state to local storage:', error)
+  }
+}
+
+// Load state from local storage
+const loadState = (): Adventure | null => {
+  try {
+    const savedState = localStorage.getItem(STORAGE_KEY)
+    if (savedState) {
+      const parsed = JSON.parse(savedState)
+      if (isValidStory(parsed)) {
+        return parsed
+      }
+    }
+  } catch (error) {
+    console.error('Error loading state from local storage:', error)
+  }
+  return null
+}
+
+// Save last exported state
+const saveLastExport = (adventure: Adventure) => {
+  try {
+    localStorage.setItem(LAST_EXPORT_KEY, JSON.stringify(adventure))
+    hasUnsavedChanges.value = false
+  } catch (error) {
+    console.error('Error saving last export to local storage:', error)
+  }
+}
+
+// Load last exported state
+const loadLastExport = (): Adventure | null => {
+  try {
+    const savedState = localStorage.getItem(LAST_EXPORT_KEY)
+    if (savedState) {
+      const parsed = JSON.parse(savedState)
+      if (isValidStory(parsed)) {
+        return parsed
+      }
+    }
+  } catch (error) {
+    console.error('Error loading last export from local storage:', error)
+  }
+  return null
+}
+
+// Compare current state with last export
+const checkForUnsavedChanges = (currentState: Adventure) => {
+  const lastExport = loadLastExport()
+  if (!lastExport) {
+    hasUnsavedChanges.value = true
+    return
+  }
+
+  // Simple deep comparison
+  const currentStateStr = JSON.stringify(currentState)
+  const lastExportStr = JSON.stringify(lastExport)
+  hasUnsavedChanges.value = currentStateStr !== lastExportStr
+}
+
+// Watch for changes to the adventure and update unsaved status
+watch(
+  () => props.adventure,
+  (newAdventure) => {
+    saveState(newAdventure)
+    checkForUnsavedChanges(newAdventure)
+  },
+  { deep: true },
+)
+
+// Handle beforeunload event
+const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+  if (hasUnsavedChanges.value) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
+
+onMounted(() => {
+  const savedState = loadState()
+  if (savedState) {
+    emit('update:adventure', savedState)
+  }
+
+  // Initialize branch positions if not set
+  props.adventure.Branches.forEach((branch, index) => {
+    if (!branch.x || !branch.y) {
+      branch.x = 100 + index * 300
+      branch.y = 100
+    }
+  })
+
+  // Add beforeunload event listener
+  window.addEventListener('beforeunload', handleBeforeUnload)
+
+  // Check initial unsaved state
+  checkForUnsavedChanges(props.adventure)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+})
 
 // Flatten all branches for rendering
 const allBranches = computed(() => {
@@ -401,15 +524,10 @@ const truncateText = (text: string): string => {
   return text.substring(0, 97)
 }
 
-onMounted(() => {
-  // Initialize branch positions if not set
-  props.adventure.Branches.forEach((branch, index) => {
-    if (!branch.x || !branch.y) {
-      branch.x = 100 + index * 300
-      branch.y = 100
-    }
-  })
-})
+const saveStory = () => {
+  saveState(props.adventure)
+  saveLastExport(props.adventure)
+}
 </script>
 
 <style scoped>
@@ -564,5 +682,26 @@ onMounted(() => {
   text-align: center;
   border-bottom: 1px solid #ffeeba;
   font-weight: 500;
+}
+
+.unsaved-changes-banner {
+  background-color: #fff3cd;
+  color: #856404;
+  padding: 0.75rem;
+  text-align: center;
+  border-bottom: 1px solid #ffeeba;
+  font-weight: 500;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.btn-success {
+  background-color: #4caf50;
+  color: white;
+}
+
+.btn-success:hover {
+  background-color: #388e3c;
 }
 </style>
