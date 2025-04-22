@@ -34,13 +34,21 @@
     </div>
 
     <div class="story-canvas" ref="canvas">
-      <div class="canvas-content" :style="{ transform: `scale(${zoomLevel})` }">
+      <div
+        class="canvas-content"
+        :style="{
+          transform: `scale(${zoomLevel})`,
+          width: `${canvasWidth}px`,
+          height: `${canvasHeight}px`,
+        }"
+      >
         <!-- SVG for connections -->
         <svg
           class="connections-layer"
           :width="canvasWidth"
           :height="canvasHeight"
-          style="position: absolute; top: 0; left: 0"
+          :viewBox="`0 0 ${canvasWidth} ${canvasHeight}`"
+          preserveAspectRatio="xMidYMid meet"
         >
           <template v-for="branch in allBranches" :key="'conn-' + branch.ID">
             <template v-if="branch.Branches && branch.Branches.length > 0">
@@ -52,7 +60,7 @@
                 :x2="child.x + 125"
                 :y2="child.y + 20"
                 stroke="#4caf50"
-                stroke-width="2"
+                :stroke-width="2 / zoomLevel"
               />
             </template>
           </template>
@@ -147,98 +155,6 @@ const LAST_EXPORT_KEY = 'twitch-storyteller-last-export'
 
 // Track if there are unsaved changes
 const hasUnsavedChanges = ref(false)
-
-// Save state to local storage
-const saveState = (adventure: Adventure) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(adventure))
-  } catch (error) {
-    console.error('Error saving state to local storage:', error)
-  }
-}
-
-// Load state from local storage
-const loadState = (): Adventure | null => {
-  try {
-    const savedState = localStorage.getItem(STORAGE_KEY)
-    if (savedState) {
-      const parsed = JSON.parse(savedState)
-      if (isValidStory(parsed)) {
-        return parsed
-      }
-    }
-  } catch (error) {
-    console.error('Error loading state from local storage:', error)
-  }
-  return null
-}
-
-// Save last exported state
-const saveLastExport = (adventure: Adventure) => {
-  try {
-    localStorage.setItem(LAST_EXPORT_KEY, JSON.stringify(adventure))
-    hasUnsavedChanges.value = false
-  } catch (error) {
-    console.error('Error saving last export to local storage:', error)
-  }
-}
-
-// Load last exported state
-const loadLastExport = (): Adventure | null => {
-  try {
-    const savedState = localStorage.getItem(LAST_EXPORT_KEY)
-    if (savedState) {
-      const parsed = JSON.parse(savedState)
-      if (isValidStory(parsed)) {
-        return parsed
-      }
-    }
-  } catch (error) {
-    console.error('Error loading last export from local storage:', error)
-  }
-  return null
-}
-
-// Compare current state with last export
-const checkForUnsavedChanges = (currentState: Adventure) => {
-  const lastExport = loadLastExport()
-  if (!lastExport) {
-    hasUnsavedChanges.value = true
-    return
-  }
-
-  // Simple deep comparison
-  const currentStateStr = JSON.stringify(currentState)
-  const lastExportStr = JSON.stringify(lastExport)
-  hasUnsavedChanges.value = currentStateStr !== lastExportStr
-}
-
-// Watch for changes to the adventure and update unsaved status
-watch(
-  () => props.adventure,
-  (newAdventure) => {
-    saveState(newAdventure)
-    checkForUnsavedChanges(newAdventure)
-  },
-  { deep: true },
-)
-
-// Handle beforeunload event
-const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-  if (hasUnsavedChanges.value) {
-    e.preventDefault()
-    e.returnValue = ''
-  }
-}
-
-// Add zoom handlers
-const handleWheel = (event: WheelEvent) => {
-  event.preventDefault()
-  const delta = event.deltaY
-  const zoomFactor = 0.001
-  const newZoom = Math.max(0.1, Math.min(2, zoomLevel.value - delta * zoomFactor))
-  zoomLevel.value = newZoom
-}
 
 onMounted(() => {
   const savedState = loadState()
@@ -395,6 +311,7 @@ const deleteBranch = (branchToDelete: AdventureBranch) => {
 }
 
 const startDrag = (event: MouseEvent, branch: AdventureBranch) => {
+  event.preventDefault()
   isDragging = true
   currentBranch = branch
   startX = event.clientX - branch.x
@@ -406,7 +323,7 @@ const startDrag = (event: MouseEvent, branch: AdventureBranch) => {
 
 const onDrag = (event: MouseEvent) => {
   if (!isDragging || !currentBranch) return
-
+  event.preventDefault()
   currentBranch.x = event.clientX - startX
   currentBranch.y = event.clientY - startY
 }
@@ -442,12 +359,18 @@ const handleFileImport = (event: Event) => {
         return
       }
 
+      // Ensure all branches have coordinates
+      const storyWithCoordinates = {
+        ...importedStory,
+        Branches: ensureBranchCoordinates(importedStory.Branches),
+      }
+
       // Reset file input
       if (input) {
         input.value = ''
       }
 
-      emit('update:adventure', importedStory)
+      emit('update:adventure', storyWithCoordinates)
     } catch (error) {
       console.error('Error parsing JSON:', error)
       alert('Error parsing JSON file. Please check the file format.')
@@ -469,6 +392,16 @@ const isValidStory = (story: any): story is Adventure => {
     typeof story.VoiceFileExtension === 'string' &&
     Array.isArray(story.Branches)
   )
+}
+
+// Add helper function to ensure branches have coordinates
+const ensureBranchCoordinates = (branches: AdventureBranch[]): AdventureBranch[] => {
+  return branches.map((branch, index) => ({
+    ...branch,
+    x: branch.x ?? 100 + index * 300,
+    y: branch.y ?? 100,
+    Branches: branch.Branches ? ensureBranchCoordinates(branch.Branches) : [],
+  }))
 }
 
 const clearStory = () => {
@@ -552,6 +485,104 @@ const saveStory = () => {
   saveState(props.adventure)
   saveLastExport(props.adventure)
 }
+
+// Handle beforeunload event
+const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+  if (hasUnsavedChanges.value) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
+
+// Add zoom handlers
+const handleWheel = (event: WheelEvent) => {
+  event.preventDefault()
+  const delta = event.deltaY
+  const zoomFactor = 0.001
+  const newZoom = Math.max(0.1, Math.min(2, zoomLevel.value - delta * zoomFactor))
+  zoomLevel.value = newZoom
+}
+
+// Compare current state with last export
+const checkForUnsavedChanges = (currentState: Adventure) => {
+  const lastExport = loadLastExport()
+  if (!lastExport) {
+    hasUnsavedChanges.value = true
+    return
+  }
+
+  // Simple deep comparison
+  const currentStateStr = JSON.stringify(currentState)
+  const lastExportStr = JSON.stringify(lastExport)
+  hasUnsavedChanges.value = currentStateStr !== lastExportStr
+}
+
+// Save state to local storage
+const saveState = (adventure: Adventure) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(adventure))
+  } catch (error) {
+    console.error('Error saving state to local storage:', error)
+  }
+}
+
+// Load state from local storage
+const loadState = (): Adventure | null => {
+  try {
+    const savedState = localStorage.getItem(STORAGE_KEY)
+    if (savedState) {
+      const parsed = JSON.parse(savedState)
+      if (isValidStory(parsed)) {
+        return {
+          ...parsed,
+          Branches: ensureBranchCoordinates(parsed.Branches),
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error loading state from local storage:', error)
+  }
+  return null
+}
+
+// Save last exported state
+const saveLastExport = (adventure: Adventure) => {
+  try {
+    localStorage.setItem(LAST_EXPORT_KEY, JSON.stringify(adventure))
+    hasUnsavedChanges.value = false
+  } catch (error) {
+    console.error('Error saving last export to local storage:', error)
+  }
+}
+
+// Load last exported state
+const loadLastExport = (): Adventure | null => {
+  try {
+    const savedState = localStorage.getItem(LAST_EXPORT_KEY)
+    if (savedState) {
+      const parsed = JSON.parse(savedState)
+      if (isValidStory(parsed)) {
+        return {
+          ...parsed,
+          Branches: ensureBranchCoordinates(parsed.Branches),
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error loading last export from local storage:', error)
+  }
+  return null
+}
+
+// Watch for changes to the adventure and update unsaved status
+watch(
+  () => props.adventure,
+  (newAdventure) => {
+    saveState(newAdventure)
+    checkForUnsavedChanges(newAdventure)
+  },
+  { deep: true },
+)
 </script>
 
 <style scoped>
@@ -591,8 +622,6 @@ const saveStory = () => {
   transform-origin: 0 0;
   transition: transform 0.1s ease-out;
   position: relative;
-  width: 100%;
-  height: 100%;
 }
 
 .connections-layer {
@@ -601,6 +630,8 @@ const saveStory = () => {
   left: 0;
   pointer-events: none;
   z-index: 0;
+  overflow: visible;
+  transform-origin: 0 0;
 }
 
 .branch-node {
@@ -614,6 +645,10 @@ const saveStory = () => {
   cursor: move;
   z-index: 1;
   transition: background-color 0.3s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 .branch-node.ending-branch {
@@ -654,6 +689,10 @@ const saveStory = () => {
   margin: 0.5rem 0;
   color: #333;
   font-size: 0.9rem;
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
 }
 
 .branch-content p {
