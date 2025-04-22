@@ -34,55 +34,62 @@
     </div>
 
     <div class="story-canvas" ref="canvas">
-      <!-- SVG for connections -->
-      <svg class="connections-layer" :width="canvasWidth" :height="canvasHeight">
-        <template v-for="branch in allBranches" :key="'conn-' + branch.ID">
-          <template v-if="branch.Branches && branch.Branches.length > 0">
-            <line
-              v-for="child in branch.Branches"
-              :key="'line-' + branch.ID + '-' + child.ID"
-              :x1="branch.x + 125"
-              :y1="branch.y + 100"
-              :x2="child.x + 125"
-              :y2="child.y + 20"
-              stroke="#4caf50"
-              stroke-width="2"
-            />
+      <div class="canvas-content" :style="{ transform: `scale(${zoomLevel})` }">
+        <!-- SVG for connections -->
+        <svg
+          class="connections-layer"
+          :width="canvasWidth"
+          :height="canvasHeight"
+          style="position: absolute; top: 0; left: 0"
+        >
+          <template v-for="branch in allBranches" :key="'conn-' + branch.ID">
+            <template v-if="branch.Branches && branch.Branches.length > 0">
+              <line
+                v-for="child in branch.Branches"
+                :key="'line-' + branch.ID + '-' + child.ID"
+                :x1="branch.x + 125"
+                :y1="branch.y + 100"
+                :x2="child.x + 125"
+                :y2="child.y + 20"
+                stroke="#4caf50"
+                stroke-width="2"
+              />
+            </template>
           </template>
-        </template>
-      </svg>
+        </svg>
 
-      <!-- Branch nodes -->
-      <div
-        v-for="branch in allBranches"
-        :key="'node-' + branch.ID"
-        class="branch-node"
-        :class="{
-          'ending-branch': branch.IsEnd,
-          'warning-branch': isWarningBranch(branch),
-        }"
-        :style="{ left: branch.x + 'px', top: branch.y + 'px' }"
-        @mousedown="startDrag($event, branch)"
-      >
-        <div class="branch-header">
-          <h3>{{ branch.Title }}</h3>
-          <div class="branch-actions">
-            <button @click="editBranch(branch)" class="btn-small" title="Edit branch">✏️</button>
-            <button
-              v-if="!branch.IsEnd"
-              @click="addSubBranch(branch)"
-              class="btn-small"
-              title="Add sub-branch"
-            >
-              ➕
-            </button>
-            <button @click="deleteBranch(branch)" class="btn-small" title="Delete branch">
-              🗑️
-            </button>
+        <!-- Branch nodes -->
+        <div
+          v-for="branch in allBranches"
+          :key="'node-' + branch.ID"
+          class="branch-node"
+          :class="{
+            'ending-branch': branch.IsEnd,
+            'warning-branch': isWarningBranch(branch),
+          }"
+          :style="{ left: branch.x + 'px', top: branch.y + 'px' }"
+          @mousedown="startDrag($event, branch)"
+        >
+          <div class="branch-header">
+            <h3>{{ branch.Title }}</h3>
+            <div class="branch-actions">
+              <button @click="editBranch(branch)" class="btn-small" title="Edit branch">✏️</button>
+              <button
+                v-if="!branch.IsEnd"
+                @click="addSubBranch(branch)"
+                class="btn-small"
+                title="Add sub-branch"
+              >
+                ➕
+              </button>
+              <button @click="deleteBranch(branch)" class="btn-small" title="Delete branch">
+                🗑️
+              </button>
+            </div>
           </div>
-        </div>
-        <div class="branch-content">
-          <p :class="{ truncated: branch.Text.length > 100 }">{{ truncateText(branch.Text) }}</p>
+          <div class="branch-content">
+            <p :class="{ truncated: branch.Text.length > 100 }">{{ truncateText(branch.Text) }}</p>
+          </div>
         </div>
       </div>
     </div>
@@ -125,6 +132,7 @@ const canvas = ref<HTMLElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const canvasWidth = ref(2000)
 const canvasHeight = ref(2000)
+const zoomLevel = ref(1)
 let isDragging = false
 let currentBranch: AdventureBranch | null = null
 let startX = 0
@@ -223,6 +231,15 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
   }
 }
 
+// Add zoom handlers
+const handleWheel = (event: WheelEvent) => {
+  event.preventDefault()
+  const delta = event.deltaY
+  const zoomFactor = 0.001
+  const newZoom = Math.max(0.1, Math.min(2, zoomLevel.value - delta * zoomFactor))
+  zoomLevel.value = newZoom
+}
+
 onMounted(() => {
   const savedState = loadState()
   if (savedState) {
@@ -239,6 +256,10 @@ onMounted(() => {
 
   // Add beforeunload event listener
   window.addEventListener('beforeunload', handleBeforeUnload)
+  // Add wheel event listener
+  if (canvas.value) {
+    canvas.value.addEventListener('wheel', handleWheel, { passive: false })
+  }
 
   // Check initial unsaved state
   checkForUnsavedChanges(props.adventure)
@@ -246,6 +267,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  if (canvas.value) {
+    canvas.value.removeEventListener('wheel', handleWheel)
+  }
 })
 
 // Flatten all branches for rendering
@@ -563,13 +587,20 @@ const saveStory = () => {
   padding: 2rem;
 }
 
+.canvas-content {
+  transform-origin: 0 0;
+  transition: transform 0.1s ease-out;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 .connections-layer {
   position: absolute;
   top: 0;
   left: 0;
   pointer-events: none;
-  width: 100%;
-  height: 100%;
+  z-index: 0;
 }
 
 .branch-node {
