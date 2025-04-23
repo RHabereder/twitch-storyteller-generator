@@ -10,7 +10,9 @@ declare module 'vue' {
   export interface GlobalComponents {
     AdventureEditor: typeof import('./src/components/AdventureEditor.vue')['default']
     BranchEditor: typeof import('./src/components/BranchEditor.vue')['default']
+    ChoiceModal: typeof import('./src/components/ChoiceModal.vue')['default']
     ExportModal: typeof import('./src/components/ExportModal.vue')['default']
+    StoryConverter: typeof import('./src/components/StoryConverter.vue')['default']
     StoryEditor: typeof import('./src/components/StoryEditor.vue')['default']
   }
 }

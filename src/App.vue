@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import StoryEditor from './components/StoryEditor.vue'
 import BranchEditor from './components/BranchEditor.vue'
 import AdventureEditor from './components/AdventureEditor.vue'
+import StoryConverter from './components/StoryConverter.vue'
 import type { Adventure } from './types/adventure'
 import type { AdventureBranch } from './types/adventureBranch'
 
@@ -13,32 +14,21 @@ const adventure = ref<Adventure>({
   HasSubtitles: false,
   SubtitleExtension: '',
   VoiceFileExtension: '',
-  Branches: [],
+  Branches: {},
 })
 
 const selectedBranch = ref<AdventureBranch | null>(null)
 const isBranchEditorOpen = ref(false)
 const isAdventureEditorOpen = ref(false)
+const isStoryConverterOpen = ref(false)
 
 const handleBranchUpdate = (updatedBranch: AdventureBranch) => {
-  const updateBranchInTree = (branches: AdventureBranch[]): AdventureBranch[] => {
-    return branches.map((branch) => {
-      if (branch.ID === updatedBranch.ID) {
-        return updatedBranch
-      }
-      if (branch.Branches && branch.Branches.length > 0) {
-        return {
-          ...branch,
-          Branches: updateBranchInTree(branch.Branches),
-        }
-      }
-      return branch
-    })
-  }
-
   const updatedAdventure = {
     ...adventure.value,
-    Branches: updateBranchInTree(adventure.value.Branches),
+    Branches: {
+      ...adventure.value.Branches,
+      [updatedBranch.ID]: updatedBranch,
+    },
   }
 
   adventure.value = updatedAdventure
@@ -61,24 +51,56 @@ const openAdventureEditor = () => {
 const closeAdventureEditor = () => {
   isAdventureEditorOpen.value = false
 }
+
+const openStoryConverter = () => {
+  isStoryConverterOpen.value = true
+}
+
+const closeStoryConverter = () => {
+  isStoryConverterOpen.value = false
+}
 </script>
 
 <template>
   <div class="app-container">
     <header>
       <h1>NLith's Twitch Storytelling Editor</h1>
-      <button class="btn" @click="openAdventureEditor">Edit Adventure</button>
+      <div class="header-controls">
+        <button class="btn" @click="openStoryConverter">Convert Story</button>
+        <button class="btn" @click="openAdventureEditor">Edit Adventure</button>
+      </div>
     </header>
 
     <main>
-      <StoryEditor :adventure="adventure" @update:adventure="adventure = $event" @edit-branch="openBranchEditor" />
+      <StoryEditor
+        :adventure="adventure"
+        @update:adventure="adventure = $event"
+        @edit-branch="openBranchEditor"
+      />
     </main>
 
-    <BranchEditor v-if="isBranchEditorOpen" :is-open="isBranchEditorOpen" :branch="selectedBranch"
-      @update:branch="handleBranchUpdate" @close="closeBranchEditor" />
+    <BranchEditor
+      v-if="isBranchEditorOpen"
+      :is-open="isBranchEditorOpen"
+      :branch="selectedBranch"
+      @update:branch="handleBranchUpdate"
+      @close="closeBranchEditor"
+    />
 
-    <AdventureEditor v-if="isAdventureEditorOpen" :is-open="isAdventureEditorOpen" :adventure="adventure"
-      @update:adventure="adventure = $event" @close="closeAdventureEditor" />
+    <AdventureEditor
+      v-if="isAdventureEditorOpen"
+      :is-open="isAdventureEditorOpen"
+      :adventure="adventure"
+      @update:adventure="adventure = $event"
+      @close="closeAdventureEditor"
+    />
+
+    <StoryConverter
+      v-if="isStoryConverterOpen"
+      :is-open="isStoryConverterOpen"
+      @update:adventure="adventure = $event"
+      @close="closeStoryConverter"
+    />
   </div>
 </template>
 
@@ -132,5 +154,10 @@ main {
 
 .btn:hover {
   background-color: #45a049;
+}
+
+.header-controls {
+  display: flex;
+  gap: 0.5rem;
 }
 </style>

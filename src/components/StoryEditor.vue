@@ -3,10 +3,14 @@
     <div class="editor-header">
       <h2>{{ adventure.Title }}</h2>
       <div class="editor-controls">
-        <button v-if="adventure.Branches.length === 0" @click="addBranch" class="btn">
+        <button v-if="Object.keys(adventure.Branches).length === 0" @click="addBranch" class="btn">
           Add Root Branch
         </button>
-        <button v-if="adventure.Branches.length > 0" @click="openExportModal" class="btn">
+        <button
+          v-if="Object.keys(adventure.Branches).length > 0"
+          @click="openExportModal"
+          class="btn"
+        >
           Export
         </button>
         <button @click="saveStory" class="btn" :class="{ 'btn-success': !hasUnsavedChanges }">
@@ -27,6 +31,11 @@
     <div v-if="hasUnendedBranches" class="warning-banner">
       ⚠️ Warning: Some branches do not have endings! Please ensure all story paths lead to an
       ending.
+    </div>
+
+    <div v-if="hasInfiniteLoops" class="warning-banner">
+      ⚠️ Warning: Infinite loops detected! Some branches create cycles that could lead to endless
+      repetition.
     </div>
 
     <div v-if="hasUnsavedChanges" class="unsaved-changes-banner">
@@ -51,16 +60,27 @@
           preserveAspectRatio="xMidYMid meet"
         >
           <template v-for="branch in allBranches" :key="'conn-' + branch.ID">
-            <template v-if="branch.Branches && branch.Branches.length > 0">
+            <template v-if="branch.Choices && branch.Choices.length > 0">
               <line
-                v-for="child in branch.Branches"
-                :key="'line-' + branch.ID + '-' + child.ID"
-                :x1="branch.x + 125"
-                :y1="branch.y + 100"
-                :x2="child.x + 125"
-                :y2="child.y + 20"
-                stroke="#4caf50"
+                v-for="(choice, index) in branch.Choices"
+                :key="'line-' + branch.ID + '-' + choice.Target"
+                :x1="
+                  getBranchCoordinates(branch).x +
+                  125 +
+                  (index - (branch.Choices.length - 1) / 2) * 20
+                "
+                :y1="getBranchCoordinates(branch).y + 100"
+                :x2="
+                  getTargetBranchCoordinates(choice.Target).x +
+                  125 +
+                  (index - (branch.Choices.length - 1) / 2) * 20
+                "
+                :y2="getTargetBranchCoordinates(choice.Target).y + 20"
+                :stroke="getConnectionColor(choice.Type)"
                 :stroke-width="2 / zoomLevel"
+                class="connection-line"
+                @click="removeConnection(branch, choice)"
+                :title="`Click to remove connection: ${choice.Label} (${choice.Type})`"
               />
             </template>
           </template>
@@ -74,29 +94,63 @@
           :class="{
             'ending-branch': branch.IsEnd,
             'warning-branch': isWarningBranch(branch),
+            'loop-branch': isInLoop(branch.ID),
           }"
-          :style="{ left: branch.x + 'px', top: branch.y + 'px' }"
-          @mousedown="startDrag($event, branch)"
+          :style="{
+            left: getBranchCoordinates(branch).x + 'px',
+            top: getBranchCoordinates(branch).y + 'px',
+          }"
+          :data-branch-id="branch.ID"
         >
-          <div class="branch-header">
-            <h3>{{ branch.Title }}</h3>
-            <div class="branch-actions">
-              <button @click="editBranch(branch)" class="btn-small" title="Edit branch">✏️</button>
-              <button
-                v-if="!branch.IsEnd"
-                @click="addSubBranch(branch)"
-                class="btn-small"
-                title="Add sub-branch"
-              >
-                ➕
-              </button>
-              <button @click="deleteBranch(branch)" class="btn-small" title="Delete branch">
-                🗑️
-              </button>
-            </div>
+          <div class="branch-connectors">
+            <div
+              class="connector left-connector"
+              @mousedown="startConnection($event, branch)"
+              :class="{ disabled: branch.Choices.length >= 3 }"
+              :title="branch.Choices.length >= 3 ? 'Maximum 3 choices per branch' : 'Connector'"
+            ></div>
+            <div
+              class="connector right-connector"
+              @mousedown="startConnection($event, branch)"
+              :class="{ disabled: branch.Choices.length >= 3 }"
+              :title="branch.Choices.length >= 3 ? 'Maximum 3 choices per branch' : 'Connector'"
+            ></div>
           </div>
-          <div class="branch-content">
-            <p :class="{ truncated: branch.Text.length > 100 }">{{ truncateText(branch.Text) }}</p>
+          <div class="branch-content" @mousedown="startDrag($event, branch)">
+            <div class="branch-header">
+              <h3>{{ branch.Title }}</h3>
+              <div class="branch-actions">
+                <button @click="editBranch(branch)" class="btn-small" title="Edit branch">
+                  ✏️
+                </button>
+                <button
+                  v-if="!branch.IsEnd"
+                  @click="addSubBranch(branch)"
+                  class="btn-small"
+                  title="Add sub-branch"
+                >
+                  ➕
+                </button>
+                <button @click="deleteBranch(branch)" class="btn-small" title="Delete branch">
+                  🗑️
+                </button>
+              </div>
+            </div>
+            <div class="branch-text">
+              <p :class="{ truncated: branch.Text.length > 100 }">
+                {{ truncateText(branch.Text) }}
+              </p>
+              <div v-if="branch.Choices.length > 0" class="branch-choices">
+                <div
+                  v-for="choice in branch.Choices"
+                  :key="choice.Target"
+                  class="choice-label"
+                  :style="{ color: getConnectionColor(choice.Type) }"
+                >
+                  {{ choice.Label }} ({{ choice.Type }})
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -117,15 +171,24 @@
       @update:branch="handleBranchUpdate"
       @close="closeBranchEditor"
     />
+
+    <ChoiceModal
+      v-if="isChoiceModalOpen"
+      :is-open="isChoiceModalOpen"
+      :target-branch-id="targetBranch?.ID ?? ''"
+      @save="handleChoiceSave"
+      @close="isChoiceModalOpen = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
 import type { Adventure } from '@/types/adventure'
-import type { AdventureBranch } from '@/types/adventureBranch'
+import type { AdventureBranch, Choice } from '@/types/adventureBranch'
 import ExportModal from './ExportModal.vue'
 import BranchEditor from './BranchEditor.vue'
+import ChoiceModal from './ChoiceModal.vue'
 
 const props = defineProps<{
   adventure: Adventure
@@ -149,6 +212,10 @@ let startY = 0
 const isExportModalOpen = ref(false)
 const isBranchEditorOpen = ref(false)
 const selectedBranch = ref({} as AdventureBranch)
+const isChoiceModalOpen = ref(false)
+const sourceBranch = ref<AdventureBranch | null>(null)
+const targetBranch = ref<AdventureBranch | null>(null)
+const isOutputConnection = ref(false)
 
 const STORAGE_KEY = 'twitch-storyteller-state'
 const LAST_EXPORT_KEY = 'twitch-storyteller-last-export'
@@ -163,9 +230,10 @@ onMounted(() => {
   }
 
   // Initialize branch positions if not set
-  props.adventure.Branches.forEach((branch, index) => {
+  Object.entries(props.adventure.Branches).forEach(([id, branch]) => {
     if (!branch.x || !branch.y) {
-      branch.x = 100 + index * 300
+      const index = parseInt(id)
+      branch.x = 100 + (isNaN(index) ? 0 : index * 300)
       branch.y = 100
     }
   })
@@ -190,40 +258,35 @@ onUnmounted(() => {
 
 // Flatten all branches for rendering
 const allBranches = computed(() => {
-  const flattenBranches = (branches: AdventureBranch[]): AdventureBranch[] => {
-    return branches.reduce((acc: AdventureBranch[], branch) => {
-      return [...acc, branch, ...flattenBranches(branch.Branches || [])]
-    }, [])
-  }
-  return flattenBranches(props.adventure.Branches)
+  return Object.values(props.adventure.Branches)
 })
 
-const generateBranchId = (parentId: number | null = null, level: number = 0): number => {
-  if (level === 0) {
-    // For top-level branches, just use the next number
-    const topLevelBranches = props.adventure.Branches
-    return topLevelBranches.length + 1
-  } else {
-    // For sub-branches, use parent ID * 10 + next number
-    const parentBranch = findBranchById(parentId!, props.adventure.Branches)
-    if (!parentBranch) return 0
+const generateBranchId = (): string => {
+  const existingIds = Object.keys(props.adventure.Branches).map((id) => parseInt(id))
+  const maxId = Math.max(0, ...existingIds)
+  return (maxId + 1).toString()
+}
 
-    const subBranches = parentBranch.Branches || []
-    if (parentId === null) return subBranches.length + 1
-
-    return parentId * 10 + (subBranches.length + 1)
+// Add helper function to get branch coordinates
+const getBranchCoordinates = (branch: AdventureBranch) => {
+  return {
+    x: branch.x ?? 0,
+    y: branch.y ?? 0,
   }
 }
 
-const findBranchById = (id: number, branches: AdventureBranch[]): AdventureBranch | null => {
-  for (const branch of branches) {
-    if (branch.ID === id) return branch
-    if (branch.Branches && branch.Branches.length > 0) {
-      const found = findBranchById(id, branch.Branches)
-      if (found) return found
-    }
-  }
-  return null
+// Add helper function to get target branch coordinates
+const getTargetBranchCoordinates = (targetId: string) => {
+  const targetBranch = props.adventure.Branches[targetId]
+  return targetBranch
+    ? {
+        x: targetBranch.x ?? 0,
+        y: targetBranch.y ?? 0,
+      }
+    : {
+        x: 0,
+        y: 0,
+      }
 }
 
 const addBranch = () => {
@@ -232,14 +295,17 @@ const addBranch = () => {
     Title: 'New Branch',
     Text: 'Enter your story text here...',
     IsEnd: false,
-    Branches: [],
-    x: 100 + props.adventure.Branches.length * 300,
+    Choices: [],
+    x: 100 + Object.keys(props.adventure.Branches).length * 300,
     y: 100,
   }
 
   const updatedAdventure = {
     ...props.adventure,
-    Branches: [...props.adventure.Branches, newBranch],
+    Branches: {
+      ...props.adventure.Branches,
+      [newBranch.ID]: newBranch,
+    },
   }
 
   emit('update:adventure', updatedAdventure)
@@ -247,40 +313,40 @@ const addBranch = () => {
 
 const addSubBranch = (parentBranch: AdventureBranch) => {
   const newBranch: AdventureBranch = {
-    ID: generateBranchId(parentBranch.ID, 1),
+    ID: generateBranchId(),
     Title: 'New Sub-branch',
     Text: 'Enter your story text here...',
     IsEnd: false,
-    Branches: [],
-    x: parentBranch.x + 300,
-    y: parentBranch.y + 150,
+    Choices: [],
+    x: (parentBranch.x ?? 0) + 300,
+    y: (parentBranch.y ?? 0) + 150,
   }
 
-  const addBranchToParent = (branches: AdventureBranch[]): AdventureBranch[] => {
-    return branches.map((branch) => {
-      if (branch.ID === parentBranch.ID) {
-        const updatedBranch = {
-          ...branch,
-          Branches: [...(branch.Branches || []), newBranch],
-        }
-        return updatedBranch
-      }
-      if (branch.Branches && branch.Branches.length > 0) {
-        return {
-          ...branch,
-          Branches: addBranchToParent(branch.Branches),
-        }
-      }
-      return branch
-    })
+  // Add the new branch to the branches map
+  const updatedBranches = {
+    ...props.adventure.Branches,
+    [newBranch.ID]: newBranch,
   }
+
+  // Update the parent branch's choices
+  const updatedParentBranch = {
+    ...parentBranch,
+    Choices: [
+      ...parentBranch.Choices,
+      {
+        Label: newBranch.Title,
+        Target: newBranch.ID,
+        Type: 'direct' as const,
+      },
+    ],
+  }
+  updatedBranches[parentBranch.ID] = updatedParentBranch
 
   const updatedAdventure = {
     ...props.adventure,
-    Branches: addBranchToParent(props.adventure.Branches),
+    Branches: updatedBranches,
   }
 
-  // Update the parent component with the new adventure structure
   emit('update:adventure', updatedAdventure)
 }
 
@@ -290,21 +356,25 @@ const editBranch = (branch: AdventureBranch) => {
 }
 
 const deleteBranch = (branchToDelete: AdventureBranch) => {
-  const removeBranch = (branches: AdventureBranch[]): AdventureBranch[] => {
-    return branches.filter((branch) => {
-      if (branch.ID === branchToDelete.ID) {
-        return false
-      }
-      if (branch.Branches && branch.Branches.length > 0) {
-        branch.Branches = removeBranch(branch.Branches)
-      }
-      return true
-    })
-  }
+  // Create a copy of branches without the deleted branch
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { [branchToDelete.ID]: removed, ...remainingBranches } = props.adventure.Branches
+
+  // Remove references to the deleted branch from other branches' choices
+  const updatedBranches = Object.entries(remainingBranches).reduce<{
+    [key: string]: AdventureBranch
+  }>((acc, [id, branch]) => {
+    const updatedChoices = branch.Choices.filter((choice) => choice.Target !== branchToDelete.ID)
+    acc[id] = {
+      ...branch,
+      Choices: updatedChoices,
+    }
+    return acc
+  }, {})
 
   const updatedAdventure = {
     ...props.adventure,
-    Branches: removeBranch(props.adventure.Branches),
+    Branches: updatedBranches,
   }
 
   emit('update:adventure', updatedAdventure)
@@ -314,8 +384,8 @@ const startDrag = (event: MouseEvent, branch: AdventureBranch) => {
   event.preventDefault()
   isDragging = true
   currentBranch = branch
-  startX = event.clientX - branch.x
-  startY = event.clientY - branch.y
+  startX = event.clientX - (branch.x ?? 0)
+  startY = event.clientY - (branch.y ?? 0)
 
   document.addEventListener('mousemove', onDrag)
   document.addEventListener('mouseup', stopDrag)
@@ -351,7 +421,7 @@ const handleFileImport = (event: Event) => {
   reader.onload = (e) => {
     try {
       const content = e.target?.result as string
-      const importedStory = JSON.parse(content) as Adventure
+      const importedStory = JSON.parse(content)
 
       // Validate the imported story structure
       if (!isValidStory(importedStory)) {
@@ -359,18 +429,15 @@ const handleFileImport = (event: Event) => {
         return
       }
 
-      // Ensure all branches have coordinates
-      const storyWithCoordinates = {
-        ...importedStory,
-        Branches: ensureBranchCoordinates(importedStory.Branches),
-      }
+      // Convert the imported story to the new format
+      const convertedStory = convertImportedStory(importedStory)
 
       // Reset file input
       if (input) {
         input.value = ''
       }
 
-      emit('update:adventure', storyWithCoordinates)
+      emit('update:adventure', convertedStory)
     } catch (error) {
       console.error('Error parsing JSON:', error)
       alert('Error parsing JSON file. Please check the file format.')
@@ -380,28 +447,19 @@ const handleFileImport = (event: Event) => {
   reader.readAsText(file)
 }
 
-const isValidStory = (story: any): story is Adventure => {
+const isValidStory = (story: unknown): story is Adventure => {
   return (
     typeof story === 'object' &&
     story !== null &&
-    typeof story.Title === 'string' &&
-    typeof story.UsesTTS === 'boolean' &&
-    typeof story.UsesVoicefiles === 'boolean' &&
-    typeof story.HasSubtitles === 'boolean' &&
-    typeof story.SubtitleExtension === 'string' &&
-    typeof story.VoiceFileExtension === 'string' &&
-    Array.isArray(story.Branches)
+    typeof (story as Adventure).Title === 'string' &&
+    typeof (story as Adventure).UsesTTS === 'boolean' &&
+    typeof (story as Adventure).UsesVoicefiles === 'boolean' &&
+    typeof (story as Adventure).HasSubtitles === 'boolean' &&
+    typeof (story as Adventure).SubtitleExtension === 'string' &&
+    typeof (story as Adventure).VoiceFileExtension === 'string' &&
+    (Array.isArray((story as Adventure).Branches) ||
+      typeof (story as Adventure).Branches === 'object')
   )
-}
-
-// Add helper function to ensure branches have coordinates
-const ensureBranchCoordinates = (branches: AdventureBranch[]): AdventureBranch[] => {
-  return branches.map((branch, index) => ({
-    ...branch,
-    x: branch.x ?? 100 + index * 300,
-    y: branch.y ?? 100,
-    Branches: branch.Branches ? ensureBranchCoordinates(branch.Branches) : [],
-  }))
 }
 
 const clearStory = () => {
@@ -413,7 +471,7 @@ const clearStory = () => {
       HasSubtitles: props.adventure.HasSubtitles,
       SubtitleExtension: props.adventure.SubtitleExtension,
       VoiceFileExtension: props.adventure.VoiceFileExtension,
-      Branches: [],
+      Branches: {},
     }
     emit('update:adventure', emptyAdventure)
   }
@@ -429,28 +487,17 @@ const closeExportModal = () => {
 
 const isFirstBranch = (branch: AdventureBranch | null): boolean => {
   if (!branch) return false
-  return props.adventure.Branches.length > 0 && props.adventure.Branches[0].ID === branch.ID
+  const firstBranchId = Object.keys(props.adventure.Branches)[0]
+  return firstBranchId === branch.ID
 }
 
 const handleBranchUpdate = (updatedBranch: AdventureBranch) => {
-  const updateBranchInTree = (branches: AdventureBranch[]): AdventureBranch[] => {
-    return branches.map((branch) => {
-      if (branch.ID === updatedBranch.ID) {
-        return updatedBranch
-      }
-      if (branch.Branches && branch.Branches.length > 0) {
-        return {
-          ...branch,
-          Branches: updateBranchInTree(branch.Branches),
-        }
-      }
-      return branch
-    })
-  }
-
   const updatedAdventure = {
     ...props.adventure,
-    Branches: updateBranchInTree(props.adventure.Branches),
+    Branches: {
+      ...props.adventure.Branches,
+      [updatedBranch.ID]: updatedBranch,
+    },
   }
 
   emit('update:adventure', updatedAdventure)
@@ -464,16 +511,15 @@ const closeBranchEditor = () => {
 }
 
 const hasUnendedBranches = computed(() => {
-  const checkBranch = (branch: AdventureBranch): boolean => {
+  return Object.values(props.adventure.Branches).some((branch) => {
     if (branch.IsEnd) return false
-    if (!branch.Branches || branch.Branches.length === 0) return true
-    return branch.Branches.some(checkBranch)
-  }
-  return props.adventure.Branches.some(checkBranch)
+    if (!branch.Choices || branch.Choices.length === 0) return true
+    return false
+  })
 })
 
 const isWarningBranch = (branch: AdventureBranch): boolean => {
-  return !branch.IsEnd && (!branch.Branches || branch.Branches.length === 0)
+  return !branch.IsEnd && (!branch.Choices || branch.Choices.length === 0)
 }
 
 const truncateText = (text: string): string => {
@@ -526,25 +572,6 @@ const saveState = (adventure: Adventure) => {
   }
 }
 
-// Load state from local storage
-const loadState = (): Adventure | null => {
-  try {
-    const savedState = localStorage.getItem(STORAGE_KEY)
-    if (savedState) {
-      const parsed = JSON.parse(savedState)
-      if (isValidStory(parsed)) {
-        return {
-          ...parsed,
-          Branches: ensureBranchCoordinates(parsed.Branches),
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Error loading state from local storage:', error)
-  }
-  return null
-}
-
 // Save last exported state
 const saveLastExport = (adventure: Adventure) => {
   try {
@@ -555,17 +582,63 @@ const saveLastExport = (adventure: Adventure) => {
   }
 }
 
-// Load last exported state
+// Add helper function to ensure branch coordinates
+const ensureBranchCoordinates = (branch: AdventureBranch, index: number): AdventureBranch => {
+  const defaultX = 100 + index * 300
+  const defaultY = 100
+  return {
+    ...branch,
+    x:
+      branch.x !== undefined && typeof branch.x === 'number' && !isNaN(branch.x)
+        ? branch.x
+        : defaultX,
+    y:
+      branch.y !== undefined && typeof branch.y === 'number' && !isNaN(branch.y)
+        ? branch.y
+        : defaultY,
+  }
+}
+
+// Add helper function to convert imported story
+const convertImportedStory = (importedStory: Adventure): Adventure => {
+  const branchesArray = Array.isArray(importedStory.Branches)
+    ? (importedStory.Branches as AdventureBranch[])
+    : (Object.values(importedStory.Branches) as AdventureBranch[])
+  const branchesWithCoordinates = branchesArray.map((branch, index) =>
+    ensureBranchCoordinates(branch, index),
+  )
+  return {
+    ...importedStory,
+    Branches: branchesWithCoordinates.reduce<{ [key: string]: AdventureBranch }>((acc, branch) => {
+      acc[branch.ID] = branch
+      return acc
+    }, {}),
+  }
+}
+
+// Update loadState and loadLastExport to use the new helper function
+const loadState = (): Adventure | null => {
+  try {
+    const savedState = localStorage.getItem(STORAGE_KEY)
+    if (savedState) {
+      const parsed = JSON.parse(savedState)
+      if (isValidStory(parsed)) {
+        return convertImportedStory(parsed)
+      }
+    }
+  } catch (error) {
+    console.error('Error loading state from local storage:', error)
+  }
+  return null
+}
+
 const loadLastExport = (): Adventure | null => {
   try {
     const savedState = localStorage.getItem(LAST_EXPORT_KEY)
     if (savedState) {
       const parsed = JSON.parse(savedState)
       if (isValidStory(parsed)) {
-        return {
-          ...parsed,
-          Branches: ensureBranchCoordinates(parsed.Branches),
-        }
+        return convertImportedStory(parsed)
       }
     }
   } catch (error) {
@@ -583,6 +656,260 @@ watch(
   },
   { deep: true },
 )
+
+const startConnection = (event: MouseEvent, branch: AdventureBranch) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  if (branch.Choices.length >= 3) return // Don't allow more than 3 choices
+
+  sourceBranch.value = branch
+  isOutputConnection.value = true // Always treat as output connection
+
+  document.addEventListener('mousemove', drawConnection)
+  document.addEventListener('mouseup', endConnection)
+}
+
+const drawConnection = (event: MouseEvent) => {
+  if (!sourceBranch.value) return
+
+  // Clear any existing temporary line
+  const existingLine = document.querySelector('.temporary-connection')
+  if (existingLine) {
+    existingLine.remove()
+  }
+
+  // Get source branch coordinates
+  const sourceCoords = getBranchCoordinates(sourceBranch.value)
+  const sourceX = sourceCoords.x + (isOutputConnection.value ? 250 : 0)
+  const sourceY = sourceCoords.y + 50
+
+  // Get canvas position and scroll
+  const canvas = document.querySelector('.story-canvas')
+  if (!canvas) return
+
+  const scrollLeft = canvas.scrollLeft
+  const scrollTop = canvas.scrollTop
+
+  // Get the canvas content element to account for padding
+  const canvasContent = document.querySelector('.canvas-content')
+  if (!canvasContent) return
+
+  const contentRect = canvasContent.getBoundingClientRect()
+
+  // Calculate target coordinates relative to canvas, accounting for padding and zoom
+  const targetX = (event.clientX - contentRect.left + scrollLeft) / zoomLevel.value
+  const targetY = (event.clientY - contentRect.top + scrollTop) / zoomLevel.value
+
+  // Create temporary line
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+  line.setAttribute('x1', sourceX.toString())
+  line.setAttribute('y1', sourceY.toString())
+  line.setAttribute('x2', targetX.toString())
+  line.setAttribute('y2', targetY.toString())
+  line.setAttribute('stroke', '#4caf50')
+  line.setAttribute('stroke-width', '2')
+  line.classList.add('temporary-connection')
+
+  const svg = document.querySelector('.connections-layer')
+  if (svg) {
+    svg.appendChild(line)
+  }
+}
+
+const endConnection = (event: MouseEvent) => {
+  if (!sourceBranch.value) return
+
+  // Remove temporary line
+  const existingLine = document.querySelector('.temporary-connection')
+  if (existingLine) {
+    existingLine.remove()
+  }
+
+  // Find target branch under cursor
+  const targetElement = document.elementFromPoint(event.clientX, event.clientY)
+  const targetNode = targetElement?.closest('.branch-node')
+  if (targetNode) {
+    const targetId = targetNode.getAttribute('data-branch-id')
+    if (targetId && targetId !== sourceBranch.value.ID) {
+      targetBranch.value = props.adventure.Branches[targetId]
+      if (!targetBranch.value.IsEnd) {
+        isChoiceModalOpen.value = true
+      } else {
+        // Only clear if we're not opening the modal
+        sourceBranch.value = null
+        targetBranch.value = null
+      }
+    } else {
+      // Clear if target is invalid
+      sourceBranch.value = null
+      targetBranch.value = null
+    }
+  } else {
+    // Clear if no target found
+    sourceBranch.value = null
+    targetBranch.value = null
+  }
+
+  document.removeEventListener('mousemove', drawConnection)
+  document.removeEventListener('mouseup', endConnection)
+}
+
+const handleChoiceSave = (choice: Choice) => {
+  console.log('handleChoiceSave called with:', {
+    choice,
+    sourceBranch: sourceBranch.value,
+    targetBranch: targetBranch.value,
+  })
+
+  if (!sourceBranch.value || !targetBranch.value) {
+    console.log('Missing source or target branch')
+    return
+  }
+
+  // Only allow output connections to create choices
+  if (isOutputConnection.value) {
+    // Create a new choice with the target branch ID
+    const newChoice: Choice = {
+      Label: choice.Label,
+      Target: targetBranch.value.ID,
+      Type: choice.Type,
+    }
+
+    console.log('Creating new choice:', newChoice)
+
+    // Create a new branch with the updated choices array
+    const updatedBranch = {
+      ...sourceBranch.value,
+      Choices: [...(sourceBranch.value.Choices || []), newChoice],
+    }
+
+    console.log('Updated branch:', updatedBranch)
+
+    // Create a new adventure with the updated branch
+    const updatedAdventure = {
+      ...props.adventure,
+      Branches: {
+        ...props.adventure.Branches,
+        [sourceBranch.value.ID]: updatedBranch,
+      },
+    }
+
+    console.log('Emitting updated adventure:', updatedAdventure)
+    // Emit the update
+    emit('update:adventure', updatedAdventure)
+  } else {
+    console.log('Not an output connection, skipping choice creation')
+  }
+
+  // Clean up after the modal is closed
+  isChoiceModalOpen.value = false
+  // Don't clear sourceBranch and targetBranch here, let the modal close event handle it
+}
+
+const removeConnection = (branch: AdventureBranch, choice: Choice) => {
+  if (!confirm(`Are you sure you want to remove the connection "${choice.Label}"?`)) {
+    return
+  }
+
+  // Create a new branch with the choice removed
+  const updatedBranch = {
+    ...branch,
+    Choices: branch.Choices.filter((c) => c.Target !== choice.Target),
+  }
+
+  // Create a new adventure with the updated branch
+  const updatedAdventure = {
+    ...props.adventure,
+    Branches: {
+      ...props.adventure.Branches,
+      [branch.ID]: updatedBranch,
+    },
+  }
+
+  // Emit the update
+  emit('update:adventure', updatedAdventure)
+}
+
+const getConnectionColor = (type: string): string => {
+  switch (type) {
+    case 'loop':
+      return '#1565c0' // Darker blue
+    case 'jump':
+      return '#f57f17' // Darker yellow/orange
+    default:
+      return '#2e7d32' // Darker green (direct)
+  }
+}
+
+const hasInfiniteLoops = computed(() => {
+  const visited = new Set<string>()
+  const recursionStack = new Set<string>()
+
+  const hasCycle = (branchId: string): boolean => {
+    if (recursionStack.has(branchId)) {
+      return true // Cycle detected
+    }
+    if (visited.has(branchId)) {
+      return false // Already checked this branch
+    }
+
+    visited.add(branchId)
+    recursionStack.add(branchId)
+
+    const branch = props.adventure.Branches[branchId]
+    if (branch && branch.Choices) {
+      for (const choice of branch.Choices) {
+        if (hasCycle(choice.Target)) {
+          return true
+        }
+      }
+    }
+
+    recursionStack.delete(branchId)
+    return false
+  }
+
+  // Check each branch for cycles
+  for (const branchId of Object.keys(props.adventure.Branches)) {
+    if (hasCycle(branchId)) {
+      return true
+    }
+  }
+
+  return false
+})
+
+const isInLoop = (branchId: string): boolean => {
+  const visited = new Set<string>()
+  const recursionStack = new Set<string>()
+
+  const hasCycle = (currentId: string): boolean => {
+    if (recursionStack.has(currentId)) {
+      return currentId === branchId // Only return true if the cycle includes our target branch
+    }
+    if (visited.has(currentId)) {
+      return false
+    }
+
+    visited.add(currentId)
+    recursionStack.add(currentId)
+
+    const branch = props.adventure.Branches[currentId]
+    if (branch && branch.Choices) {
+      for (const choice of branch.Choices) {
+        if (hasCycle(choice.Target)) {
+          return true
+        }
+      }
+    }
+
+    recursionStack.delete(currentId)
+    return false
+  }
+
+  return hasCycle(branchId)
+}
 </script>
 
 <style scoped>
@@ -628,7 +955,7 @@ watch(
   position: absolute;
   top: 0;
   left: 0;
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 0;
   overflow: visible;
   transform-origin: 0 0;
@@ -642,7 +969,6 @@ watch(
   border-radius: 8px;
   padding: 1rem;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  cursor: move;
   z-index: 1;
   transition: background-color 0.3s ease;
   user-select: none;
@@ -652,8 +978,21 @@ watch(
 }
 
 .branch-node.ending-branch {
+  background-color: #e8f5e9;
+  border-color: #2e7d32;
+}
+
+.branch-node.ending-branch .branch-header h3 {
+  color: #1b5e20;
+}
+
+.branch-node.loop-branch {
   background-color: #ffebee;
-  border-color: #ef9a9a;
+  border-color: #c62828;
+}
+
+.branch-node.loop-branch .branch-header h3 {
+  color: #b71c1c;
 }
 
 .branch-node.warning-branch {
@@ -663,6 +1002,54 @@ watch(
 
 .branch-node.warning-branch .branch-header h3 {
   color: #856404;
+}
+
+.branch-connectors {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.connector {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background-color: #4caf50;
+  border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    transform 0.2s ease,
+    background-color 0.2s ease;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.left-connector {
+  left: -6px;
+}
+
+.right-connector {
+  right: -6px;
+}
+
+.connector:hover:not(.disabled) {
+  transform: translateY(-50%) scale(1.2);
+  background-color: #45a049;
+}
+
+.connector.disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.branch-content {
+  position: relative;
+  z-index: 1;
 }
 
 .branch-actions {
@@ -685,7 +1072,7 @@ watch(
   margin-right: 0.5rem;
 }
 
-.branch-content {
+.branch-text {
   margin: 0.5rem 0;
   color: #333;
   font-size: 0.9rem;
@@ -695,13 +1082,13 @@ watch(
   -ms-user-select: text;
 }
 
-.branch-content p {
+.branch-text p {
   margin: 0;
   color: #333;
   line-height: 1.3;
 }
 
-.branch-content p.truncated::after {
+.branch-text p.truncated::after {
   content: '...';
   color: #666;
   font-weight: bold;
@@ -773,5 +1160,35 @@ watch(
 
 .btn-success:hover {
   background-color: #388e3c;
+}
+
+.branch-choices {
+  margin-top: 0.5rem;
+  border-top: 1px solid #eee;
+  padding-top: 0.5rem;
+}
+
+.choice-label {
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+  font-weight: 500;
+}
+
+.branch-node:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.temporary-connection {
+  pointer-events: none;
+}
+
+.connection-line {
+  cursor: pointer;
+  transition: stroke-width 0.2s ease;
+}
+
+.connection-line:hover {
+  stroke-width: 4px !important;
+  stroke: #f44336;
 }
 </style>

@@ -12,7 +12,12 @@
           correctly with this story.
         </div>
 
-        <div v-if="hasUnendedBranches" class="form-group">
+        <div v-if="hasInfiniteLoops" class="warning-banner">
+          ⚠️ Warning: This story contains infinite loops. The storyteller might get stuck in these
+          loops.
+        </div>
+
+        <div v-if="hasUnendedBranches || hasInfiniteLoops" class="form-group">
           <label class="checkbox-label">
             <input type="checkbox" v-model="confirmExport" />
             I understand that this story might not work correctly in the storyteller and want to
@@ -37,7 +42,11 @@
       </div>
 
       <div class="modal-footer">
-        <button class="btn" @click="handleExport" :disabled="hasUnendedBranches && !confirmExport">
+        <button
+          class="btn"
+          @click="handleExport"
+          :disabled="(hasUnendedBranches || hasInfiniteLoops) && !confirmExport"
+        >
           Export
         </button>
         <button class="btn btn-secondary" @click="closeModal">Cancel</button>
@@ -49,7 +58,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { Adventure } from '@/types/adventure'
-import type { AdventureBranch } from '@/types/adventureBranch'
 import JSZip from 'jszip'
 
 const props = defineProps<{
@@ -66,12 +74,49 @@ const subtitleFormat = ref('txt')
 const confirmExport = ref(false)
 
 const hasUnendedBranches = computed(() => {
-  const checkBranch = (branch: AdventureBranch): boolean => {
+  return Object.values(props.adventure.Branches).some((branch) => {
     if (branch.IsEnd) return false
-    if (!branch.Branches || branch.Branches.length === 0) return true
-    return branch.Branches.some(checkBranch)
+    if (!branch.Choices || branch.Choices.length === 0) return true
+    return false
+  })
+})
+
+const hasInfiniteLoops = computed(() => {
+  const visited = new Set<string>()
+  const recursionStack = new Set<string>()
+
+  const hasCycle = (branchId: string): boolean => {
+    if (recursionStack.has(branchId)) {
+      return true // Cycle detected
+    }
+    if (visited.has(branchId)) {
+      return false // Already checked this branch
+    }
+
+    visited.add(branchId)
+    recursionStack.add(branchId)
+
+    const branch = props.adventure.Branches[branchId]
+    if (branch && branch.Choices) {
+      for (const choice of branch.Choices) {
+        if (hasCycle(choice.Target)) {
+          return true
+        }
+      }
+    }
+
+    recursionStack.delete(branchId)
+    return false
   }
-  return props.adventure.Branches.some(checkBranch)
+
+  // Check each branch for cycles
+  for (const branchId of Object.keys(props.adventure.Branches)) {
+    if (hasCycle(branchId)) {
+      return true
+    }
+  }
+
+  return false
 })
 
 const closeModal = () => {
@@ -79,54 +124,52 @@ const closeModal = () => {
 }
 
 const handleExport = async () => {
-  const storyData = {
-    ...props.adventure,
-    exportDate: new Date().toISOString(),
-  }
+  try {
+    // Create a directory name from the adventure title
+    const dirName = props.adventure.Title.toLowerCase().replace(/\s+/g, '-')
 
-  if (includeSubtitles.value) {
-    // Create ZIP with both story.json and subtitles
+    // Create a new JSZip instance
     const zip = new JSZip()
-    zip.file('story.json', JSON.stringify(storyData, null, 2))
 
-    const addBranchToZip = (branch: AdventureBranch) => {
-      let content = branch.Text
-      if (subtitleFormat.value === 'srt') {
-        content = `1\n00:00:00,000 --> 00:00:05,000\n${branch.Text}\n\n`
-      }
-      zip.file(`${branch.ID}.${subtitleFormat.value}`, content)
+    // Add story.json to the root of the zip
+    zip.file('story.json', JSON.stringify(props.adventure, null, 2))
 
-      if (branch.Branches && branch.Branches.length > 0) {
-        branch.Branches.forEach(addBranchToZip)
-      }
+    // If subtitles are enabled, add subtitle files to the root
+    if (includeSubtitles.value) {
+      // Generate subtitles for each branch
+      Object.entries(props.adventure.Branches).forEach(([id, branch]) => {
+        const subtitleContent = generateSubtitleContent(branch)
+        const fileName = `branch-${id}.${props.adventure.SubtitleExtension}`
+        zip.file(fileName, subtitleContent)
+      })
     }
 
-    props.adventure.Branches.forEach(addBranchToZip)
-
-    // Generate and download the zip file
+    // Generate the zip file
     const content = await zip.generateAsync({ type: 'blob' })
-    const url = URL.createObjectURL(content)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${props.adventure.Title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.zip`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  } else {
-    // Just export the story.json file
-    const blob = new Blob([JSON.stringify(storyData, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${props.adventure.Title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }
 
-  closeModal()
+    // Create a download link
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(content)
+    link.download = `${dirName}.zip`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(link.href)
+
+    // Close the modal
+    emit('close')
+  } catch (error) {
+    console.error('Error exporting story:', error)
+    alert('Error exporting story. Please try again.')
+  }
+}
+
+const generateSubtitleContent = (branch: any) => {
+  let content = branch.Text
+  if (subtitleFormat.value === 'srt') {
+    content = `1\n00:00:00,000 --> 00:00:05,000\n${branch.Text}\n\n`
+  }
+  return content
 }
 </script>
 
