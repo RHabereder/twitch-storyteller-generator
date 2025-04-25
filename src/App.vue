@@ -83,6 +83,7 @@ const closeStoryConverter = () => {
       v-if="isBranchEditorOpen"
       :is-open="isBranchEditorOpen"
       :branch="selectedBranch"
+      :adventure="adventure"
       @update:branch="handleBranchUpdate"
       @close="closeBranchEditor"
     />

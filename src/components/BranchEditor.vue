@@ -12,10 +12,12 @@
           <input
             id="branch-id"
             v-model="editedBranch.ID"
-            type="number"
+            type="text"
             class="form-control"
-            disabled
+            :class="{ 'input-error': hasIdError }"
+            @input="validateId"
           />
+          <div v-if="hasIdError" class="error-message">{{ idError }}</div>
         </div>
 
         <div class="form-group">
@@ -60,6 +62,9 @@ const props = defineProps<{
   isOpen: boolean
   branch: AdventureBranch | null
   isFirstBranch?: boolean
+  adventure?: {
+    Branches: { [key: string]: AdventureBranch }
+  }
 }>()
 
 const emit = defineEmits<{
@@ -68,8 +73,42 @@ const emit = defineEmits<{
 }>()
 
 const editedBranch = ref({} as AdventureBranch)
+const hasIdError = ref(false)
+const idError = ref('')
 
 const isFirstBranch = computed(() => props.isFirstBranch || false)
+
+const validateId = () => {
+  const id = editedBranch.value.ID
+  hasIdError.value = false
+  idError.value = ''
+
+  // Check if ID is empty
+  if (!id) {
+    hasIdError.value = true
+    idError.value = 'ID cannot be empty'
+    return
+  }
+
+  // Check if ID contains only allowed characters
+  if (!/^[a-zA-Z0-9_]+$/.test(id)) {
+    hasIdError.value = true
+    idError.value = 'ID can only contain letters, numbers, and underscores'
+    return
+  }
+
+  // Check for duplicate IDs
+  if (props.adventure?.Branches) {
+    const isDuplicate = Object.values(props.adventure.Branches).some(
+      (b) => b.ID === id && b.ID !== props.branch?.ID,
+    )
+    if (isDuplicate) {
+      hasIdError.value = true
+      idError.value = 'This ID is already in use'
+      return
+    }
+  }
+}
 
 watch(
   () => props.branch,
@@ -80,6 +119,8 @@ watch(
       if (isFirstBranch.value) {
         editedBranch.value.IsEnd = false
       }
+      // Validate the ID when branch changes
+      validateId()
     }
   },
   { immediate: true },
@@ -87,6 +128,12 @@ watch(
 
 const saveBranch = () => {
   if (editedBranch.value) {
+    // Validate ID before saving
+    validateId()
+    if (hasIdError.value) {
+      return
+    }
+
     // Ensure first branch is not an ending
     if (isFirstBranch.value) {
       editedBranch.value.IsEnd = false
@@ -238,5 +285,15 @@ const closeModal = () => {
   font-size: 0.9em;
   margin-left: 0.5rem;
   font-style: italic;
+}
+
+.input-error {
+  border-color: #f44336;
+}
+
+.error-message {
+  color: #f44336;
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
 }
 </style>

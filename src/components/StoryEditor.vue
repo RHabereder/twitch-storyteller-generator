@@ -123,14 +123,6 @@
                 <button @click="editBranch(branch)" class="btn-small" title="Edit branch">
                   ✏️
                 </button>
-                <button
-                  v-if="!branch.IsEnd"
-                  @click="addSubBranch(branch)"
-                  class="btn-small"
-                  title="Add sub-branch"
-                >
-                  ➕
-                </button>
                 <button @click="deleteBranch(branch)" class="btn-small" title="Delete branch">
                   🗑️
                 </button>
@@ -168,6 +160,7 @@
       :is-open="isBranchEditorOpen"
       :branch="selectedBranch"
       :is-first-branch="isFirstBranch(selectedBranch)"
+      :adventure="adventure"
       @update:branch="handleBranchUpdate"
       @close="closeBranchEditor"
     />
@@ -179,6 +172,11 @@
       @save="handleChoiceSave"
       @close="isChoiceModalOpen = false"
     />
+
+    <!-- Add floating panel -->
+    <div class="floating-panel" ref="floatingPanel">
+      <button class="btn" @mousedown="startPanelDrag" @click="addBranchAtMouse">Add Branch</button>
+    </div>
   </div>
 </template>
 
@@ -222,6 +220,11 @@ const LAST_EXPORT_KEY = 'twitch-storyteller-last-export'
 
 // Track if there are unsaved changes
 const hasUnsavedChanges = ref(false)
+
+const floatingPanel = ref<HTMLElement | null>(null)
+let isPanelDragging = false
+let panelStartX = 0
+let panelStartY = 0
 
 onMounted(() => {
   const savedState = loadState()
@@ -291,7 +294,7 @@ const getTargetBranchCoordinates = (targetId: string) => {
 
 const addBranch = () => {
   const newBranch: AdventureBranch = {
-    ID: generateBranchId(),
+    ID: 'start',
     Title: 'New Branch',
     Text: 'Enter your story text here...',
     IsEnd: false,
@@ -306,45 +309,6 @@ const addBranch = () => {
       ...props.adventure.Branches,
       [newBranch.ID]: newBranch,
     },
-  }
-
-  emit('update:adventure', updatedAdventure)
-}
-
-const addSubBranch = (parentBranch: AdventureBranch) => {
-  const newBranch: AdventureBranch = {
-    ID: generateBranchId(),
-    Title: 'New Sub-branch',
-    Text: 'Enter your story text here...',
-    IsEnd: false,
-    Choices: [],
-    x: (parentBranch.x ?? 0) + 300,
-    y: (parentBranch.y ?? 0) + 150,
-  }
-
-  // Add the new branch to the branches map
-  const updatedBranches = {
-    ...props.adventure.Branches,
-    [newBranch.ID]: newBranch,
-  }
-
-  // Update the parent branch's choices
-  const updatedParentBranch = {
-    ...parentBranch,
-    Choices: [
-      ...parentBranch.Choices,
-      {
-        Label: newBranch.Title,
-        Target: newBranch.ID,
-        Type: 'direct' as const,
-      },
-    ],
-  }
-  updatedBranches[parentBranch.ID] = updatedParentBranch
-
-  const updatedAdventure = {
-    ...props.adventure,
-    Branches: updatedBranches,
   }
 
   emit('update:adventure', updatedAdventure)
@@ -492,12 +456,30 @@ const isFirstBranch = (branch: AdventureBranch | null): boolean => {
 }
 
 const handleBranchUpdate = (updatedBranch: AdventureBranch) => {
+  // Create a copy of branches without the old branch (if ID changed)
+  const remainingBranches = { ...props.adventure.Branches }
+  delete remainingBranches[selectedBranch.value.ID]
+
+  // Create updated branches with the new branch
+  const updatedBranches = {
+    ...remainingBranches,
+    [updatedBranch.ID]: updatedBranch,
+  }
+
+  // Update any choices that reference the old ID
+  Object.values(updatedBranches).forEach((branch) => {
+    if (branch.Choices) {
+      branch.Choices.forEach((choice) => {
+        if (choice.Target === selectedBranch.value.ID) {
+          choice.Target = updatedBranch.ID
+        }
+      })
+    }
+  })
+
   const updatedAdventure = {
     ...props.adventure,
-    Branches: {
-      ...props.adventure.Branches,
-      [updatedBranch.ID]: updatedBranch,
-    },
+    Branches: updatedBranches,
   }
 
   emit('update:adventure', updatedAdventure)
@@ -910,6 +892,67 @@ const isInLoop = (branchId: string): boolean => {
 
   return hasCycle(branchId)
 }
+
+const startPanelDrag = (event: MouseEvent) => {
+  if (!floatingPanel.value) return
+  isPanelDragging = true
+  panelStartX = event.clientX - floatingPanel.value.offsetLeft
+  panelStartY = event.clientY - floatingPanel.value.offsetTop
+
+  document.addEventListener('mousemove', onPanelDrag)
+  document.addEventListener('mouseup', stopPanelDrag)
+}
+
+const onPanelDrag = (event: MouseEvent) => {
+  if (!isPanelDragging || !floatingPanel.value) return
+  event.preventDefault()
+  floatingPanel.value.style.left = `${event.clientX - panelStartX}px`
+  floatingPanel.value.style.top = `${event.clientY - panelStartY}px`
+}
+
+const stopPanelDrag = () => {
+  isPanelDragging = false
+  document.removeEventListener('mousemove', onPanelDrag)
+  document.removeEventListener('mouseup', stopPanelDrag)
+}
+
+const addBranchAtMouse = (event: MouseEvent) => {
+  if (!canvas.value) return
+
+  // Get canvas position and scroll
+  const scrollLeft = canvas.value.scrollLeft
+  const scrollTop = canvas.value.scrollTop
+
+  // Get the canvas content element to account for padding
+  const canvasContent = document.querySelector('.canvas-content')
+  if (!canvasContent) return
+
+  const contentRect = canvasContent.getBoundingClientRect()
+
+  // Calculate position relative to canvas, accounting for padding and zoom
+  const x = (event.clientX - contentRect.left + scrollLeft) / zoomLevel.value
+  const y = (event.clientY - contentRect.top + scrollTop) / zoomLevel.value
+
+  const newBranch: AdventureBranch = {
+    ID: generateBranchId(),
+    Title: 'New Branch',
+    Text: 'Enter your story text here...',
+    IsEnd: false,
+    Choices: [],
+    x,
+    y,
+  }
+
+  const updatedAdventure = {
+    ...props.adventure,
+    Branches: {
+      ...props.adventure.Branches,
+      [newBranch.ID]: newBranch,
+    },
+  }
+
+  emit('update:adventure', updatedAdventure)
+}
 </script>
 
 <style scoped>
@@ -1190,5 +1233,24 @@ const isInLoop = (branchId: string): boolean => {
 .connection-line:hover {
   stroke-width: 4px !important;
   stroke: #f44336;
+}
+
+.floating-panel {
+  position: fixed;
+  top: 100px;
+  left: 20px;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  cursor: move;
+  user-select: none;
+}
+
+.floating-panel button {
+  width: 100%;
+  margin: 0;
 }
 </style>
