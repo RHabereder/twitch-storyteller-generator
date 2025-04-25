@@ -175,7 +175,12 @@
 
     <!-- Add floating panel -->
     <div class="floating-panel" ref="floatingPanel">
-      <button class="btn" @mousedown="startPanelDrag" @click="addBranchAtMouse">Add Branch</button>
+      <div class="panel-header" @mousedown="startPanelDrag">
+        <span>Tools</span>
+      </div>
+      <div class="panel-content">
+        <button class="btn" @click="addBranchAtMouse">Add Branch</button>
+      </div>
     </div>
   </div>
 </template>
@@ -1242,14 +1247,27 @@ const addBranchAtMouse = (event: MouseEvent) => {
   background-color: white;
   border: 1px solid #ddd;
   border-radius: 8px;
-  padding: 1rem;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   z-index: 1000;
   cursor: move;
   user-select: none;
+  width: 200px;
 }
 
-.floating-panel button {
+.panel-header {
+  padding: 0.75rem;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  border-radius: 8px 8px 0 0;
+  font-weight: 500;
+  color: #333;
+}
+
+.panel-content {
+  padding: 1rem;
+}
+
+.panel-content button {
   width: 100%;
   margin: 0;
 }
