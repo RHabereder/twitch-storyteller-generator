@@ -58,6 +58,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { Adventure } from '@/types/adventure'
+import type { AdventureBranch } from '@/types/adventureBranch'
 import JSZip from 'jszip'
 
 const props = defineProps<{
@@ -128,33 +129,43 @@ const handleExport = async () => {
     // Create a directory name from the adventure title
     const dirName = props.adventure.Title.toLowerCase().replace(/\s+/g, '-')
 
-    // Create a new JSZip instance
-    const zip = new JSZip()
-
-    // Add story.json to the root of the zip
-    zip.file('story.json', JSON.stringify(props.adventure, null, 2))
-
-    // If subtitles are enabled, add subtitle files to the root
     if (includeSubtitles.value) {
+      // Create a new JSZip instance
+      const zip = new JSZip()
+
+      // Add story.json to the root of the zip
+      zip.file('story.json', JSON.stringify(props.adventure, null, 2))
+
       // Generate subtitles for each branch
       Object.entries(props.adventure.Branches).forEach(([id, branch]) => {
         const subtitleContent = generateSubtitleContent(branch)
         const fileName = `branch-${id}.${props.adventure.SubtitleExtension}`
         zip.file(fileName, subtitleContent)
       })
+
+      // Generate the zip file
+      const content = await zip.generateAsync({ type: 'blob' })
+
+      // Create a download link
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(content)
+      link.download = `${dirName}.zip`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(link.href)
+    } else {
+      // Export as JSON file
+      const storyJson = JSON.stringify(props.adventure, null, 2)
+      const blob = new Blob([storyJson], { type: 'application/json' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `${dirName}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(link.href)
     }
-
-    // Generate the zip file
-    const content = await zip.generateAsync({ type: 'blob' })
-
-    // Create a download link
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(content)
-    link.download = `${dirName}.zip`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(link.href)
 
     // Close the modal
     emit('close')
@@ -164,7 +175,7 @@ const handleExport = async () => {
   }
 }
 
-const generateSubtitleContent = (branch: any) => {
+const generateSubtitleContent = (branch: AdventureBranch) => {
   let content = branch.Text
   if (subtitleFormat.value === 'srt') {
     content = `1\n00:00:00,000 --> 00:00:05,000\n${branch.Text}\n\n`
