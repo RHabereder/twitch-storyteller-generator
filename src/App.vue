@@ -103,23 +103,23 @@ onMounted(() => {
       <h1>NLith's Twitch Storytelling Editor</h1>
     </header>
 
-    <div class="story-selector-row">
-      <StorySelector
-        :current-story="adventure"
-        :story-count="storyCount"
-        @update:story="handleStoryUpdate"
-        @modal-state-change="handleModalStateChange"
-        @request-new-story="handleNewStoryRequest"
-      />
-    </div>
-
     <main>
       <StoryEditor
         :adventure="adventure"
         :is-modal-open="isStoryNameModalOpen"
         @update:adventure="handleAdventureUpdate"
         @story-imported="handleStoryImported"
-      />
+      >
+        <template #toolbar>
+          <StorySelector
+            :current-story="adventure"
+            :story-count="storyCount"
+            @update:story="handleStoryUpdate"
+            @modal-state-change="handleModalStateChange"
+            @request-new-story="handleNewStoryRequest"
+          />
+        </template>
+      </StoryEditor>
     </main>
 
     <StoryNameModal
@@ -164,10 +164,7 @@ header h1 {
 }
 
 .story-selector-row {
-  padding: 1rem;
-  background-color: #f5f5f5;
-  border-bottom: 1px solid #ddd;
-  flex-shrink: 0;
+  display: none;
 }
 
 main {

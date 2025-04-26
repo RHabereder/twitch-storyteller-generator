@@ -249,8 +249,8 @@ onMounted(() => {
 <style scoped>
 .story-selector {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .controls {
@@ -267,6 +267,7 @@ select {
   min-width: 200px;
   font-size: 0.9rem;
   color: #333;
+  height: 36px;
 }
 
 select:focus {

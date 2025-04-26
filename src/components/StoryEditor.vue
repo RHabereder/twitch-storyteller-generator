@@ -1,57 +1,50 @@
 <template>
   <div class="story-editor">
-    <div class="editor-header">
-      <div class="header-left">
-        <h2>{{ adventure.Title }}</h2>
-      </div>
-      <div class="header-right">
-        <button v-if="Object.keys(adventure.Branches).length === 0" @click="addBranch" class="btn">
-          Add Root Branch
-        </button>
-        <button
-          v-if="Object.keys(adventure.Branches).length > 0"
-          @click="openExportModal"
-          class="btn"
-        >
-          Export
-        </button>
-        <button
-          v-if="Object.keys(adventure.Branches).length > 0"
-          @click="openConverter"
-          class="btn"
-        >
-          Convert
-        </button>
-        <button @click="saveStory" class="btn" :class="{ 'btn-success': !hasUnsavedChanges }">
-          {{ hasUnsavedChanges ? 'Save' : 'Story Saved' }}
-        </button>
-        <button @click="importStory" class="btn">Import</button>
-        <button @click="clearStory" class="btn btn-danger">Clear</button>
-        <input
-          type="file"
-          ref="fileInput"
-          @change="handleFileImport"
-          accept=".json"
-          style="display: none"
-        />
-      </div>
-    </div>
-
-    <div v-if="hasUnendedBranches" class="warning-banner">
-      ⚠️ Warning: Some branches do not have endings! Please ensure all story paths lead to an
-      ending.
-    </div>
-
-    <div v-if="hasInfiniteLoops" class="warning-banner">
-      ⚠️ Warning: Infinite loops detected! Some branches create cycles that could lead to endless
-      repetition.
-    </div>
-
-    <div v-if="hasUnsavedChanges" class="unsaved-changes-banner">
-      ⚠️ You have unsaved changes. Please save your story to preserve your progress.
-    </div>
-
     <div class="story-canvas" ref="canvas">
+      <div class="canvas-toolbar">
+        <div class="toolbar-left">
+          <slot name="toolbar"></slot>
+        </div>
+        <div class="toolbar-center">
+          <button
+            v-if="Object.keys(adventure.Branches).length === 0"
+            @click="addBranch"
+            class="btn"
+          >
+            Add Root Branch
+          </button>
+          <button class="btn" @click="addBranchAtMouse">Add Branch</button>
+          <button @click="saveStory" class="btn" :class="{ 'btn-success': !hasUnsavedChanges }">
+            {{ hasUnsavedChanges ? 'Save' : 'Story Saved' }}
+          </button>
+          <button @click="importStory" class="btn">Import</button>
+          <button
+            v-if="Object.keys(adventure.Branches).length > 0"
+            @click="openExportModal"
+            class="btn"
+          >
+            Export
+          </button>
+          <button @click="clearStory" class="btn btn-danger">Clear</button>
+          <input
+            type="file"
+            ref="fileInput"
+            @change="handleFileImport"
+            accept=".json"
+            style="display: none"
+          />
+        </div>
+        <div class="toolbar-right">
+          <button
+            v-if="Object.keys(adventure.Branches).length > 0"
+            @click="openConverter"
+            class="btn"
+          >
+            Convert old Story
+          </button>
+        </div>
+      </div>
+
       <div
         class="canvas-content"
         :style="{
@@ -155,6 +148,25 @@
           </div>
         </div>
       </div>
+
+      <div
+        class="canvas-warnings"
+        v-if="hasUnendedBranches || hasInfiniteLoops || hasUnsavedChanges"
+      >
+        <div v-if="hasUnendedBranches" class="warning-banner">
+          ⚠️ Warning: Some branches do not have endings! Please ensure all story paths lead to an
+          ending.
+        </div>
+
+        <div v-if="hasInfiniteLoops" class="warning-banner">
+          ⚠️ Warning: Infinite loops detected! Some branches create cycles that could lead to
+          endless repetition.
+        </div>
+
+        <div v-if="hasUnsavedChanges" class="warning-banner">
+          ⚠️ You have unsaved changes. Please save your story to preserve your progress.
+        </div>
+      </div>
     </div>
 
     <ExportModal
@@ -195,27 +207,6 @@
       @choice="handleImportChoice"
       @close="isImportChoiceModalOpen = false"
     />
-
-    <!-- Add floating panel -->
-    <div
-      class="floating-panel"
-      ref="floatingPanel"
-      v-if="
-        !props.isModalOpen &&
-        !isImportChoiceModalOpen &&
-        !isExportModalOpen &&
-        !isConverterOpen &&
-        !isBranchEditorOpen &&
-        !isChoiceModalOpen
-      "
-    >
-      <div class="panel-header" @mousedown="startPanelDrag">
-        <span>Tools</span>
-      </div>
-      <div class="panel-content">
-        <button class="btn" @click="addBranchAtMouse">Add Branch</button>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -1047,47 +1038,85 @@ const handleImportChoice = (choice: 'update' | 'new') => {
   position: relative;
   overflow: hidden;
   color: #333;
-}
-
-.editor-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  background-color: #f5f5f5;
-  border-bottom: 1px solid #ddd;
-  flex-shrink: 0;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.header-right {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.editor-header h2 {
-  color: #333;
-  margin: 0;
+  flex-direction: column;
 }
 
 .story-canvas {
   width: 100%;
-  height: calc(100% - 60px);
+  flex: 1;
   position: relative;
   background-color: #fff;
   overflow: auto;
-  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-toolbar {
+  position: sticky;
+  top: 0;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  padding: 0.75rem;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  min-width: 300px;
+}
+
+.toolbar-center {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  min-width: 300px;
+  justify-content: flex-end;
 }
 
 .canvas-content {
+  flex: 1;
+  position: relative;
+  margin: 2rem 0;
+  height: 100%;
+  width: 100%;
   transform-origin: 0 0;
   transition: transform 0.1s ease-out;
-  position: relative;
+  padding: 0 2rem;
+}
+
+.canvas-warnings {
+  position: sticky;
+  bottom: 0;
+  background-color: white;
+  margin: 0 -2rem -2rem -2rem;
+  border-top: 1px solid #ddd;
+}
+
+.warning-banner {
+  background-color: #fff3cd;
+  color: #856404;
+  padding: 0.75rem;
+  text-align: center;
+  border-bottom: 1px solid #ffeeba;
+  font-weight: 500;
+}
+
+.warning-banner:last-child {
+  border-bottom: none;
 }
 
 .connections-layer {
@@ -1271,27 +1300,6 @@ const handleImportChoice = (choice: 'update' | 'new') => {
   background-color: #d32f2f;
 }
 
-.warning-banner {
-  background-color: #fff3cd;
-  color: #856404;
-  padding: 0.75rem;
-  text-align: center;
-  border-bottom: 1px solid #ffeeba;
-  font-weight: 500;
-}
-
-.unsaved-changes-banner {
-  background-color: #fff3cd;
-  color: #856404;
-  padding: 0.75rem;
-  text-align: center;
-  border-bottom: 1px solid #ffeeba;
-  font-weight: 500;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
 .btn-success {
   background-color: #4caf50;
   color: white;
@@ -1332,34 +1340,6 @@ const handleImportChoice = (choice: 'update' | 'new') => {
 }
 
 .floating-panel {
-  position: fixed;
-  top: 100px;
-  left: 20px;
-  background-color: white;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
-  cursor: move;
-  user-select: none;
-  width: 200px;
-}
-
-.panel-header {
-  padding: 0.75rem;
-  background-color: #f5f5f5;
-  border-bottom: 1px solid #ddd;
-  border-radius: 8px 8px 0 0;
-  font-weight: 500;
-  color: #333;
-}
-
-.panel-content {
-  padding: 1rem;
-}
-
-.panel-content button {
-  width: 100%;
-  margin: 0;
+  display: none;
 }
 </style>
