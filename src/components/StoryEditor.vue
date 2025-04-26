@@ -1,5 +1,20 @@
 <template>
   <div class="story-editor">
+    <div class="canvas-toolbar">
+      <div class="toolbar-left">
+        <slot name="toolbar"></slot>
+      </div>
+      <div class="toolbar-right">
+        <button
+          v-if="Object.keys(adventure.Branches).length > 0"
+          @click="openConverter"
+          class="btn"
+        >
+          Convert old Story
+        </button>
+      </div>
+    </div>
+
     <div class="canvas-warnings" v-if="hasUnendedBranches || hasInfiniteLoops || hasUnsavedChanges">
       <div v-if="hasUnendedBranches" class="warning-banner">
         ⚠️ Warning: Some branches do not have endings! Please ensure all story paths lead to an
@@ -16,49 +31,44 @@
       </div>
     </div>
 
-    <div class="story-canvas" ref="canvas" @mousedown="startCanvasDrag">
-      <div class="canvas-toolbar">
-        <div class="toolbar-left">
-          <slot name="toolbar"></slot>
-        </div>
-        <div class="toolbar-center">
+    <div class="story-canvas" ref="canvas">
+      <div class="canvas-sidebar">
+        <div class="sidebar-buttons">
           <button
             v-if="Object.keys(adventure.Branches).length === 0"
             @click="addBranch"
-            class="btn"
+            class="btn-icon"
+            title="Add Root Branch"
           >
-            Add Root Branch
+            ➕
           </button>
-          <button class="btn" @click="addBranchAtMouse">Add Branch</button>
-          <button @click="saveStory" class="btn" :class="{ 'btn-success': !hasUnsavedChanges }">
-            {{ hasUnsavedChanges ? 'Save' : 'Story Saved' }}
+          <button class="btn-icon" @click="addBranchAtMouse" title="Add Branch">➕</button>
+          <button
+            @click="saveStory"
+            class="btn-icon"
+            :class="{ 'btn-success': !hasUnsavedChanges }"
+            :title="hasUnsavedChanges ? 'Save' : 'Story Saved'"
+          >
+            💾
           </button>
-          <button @click="importStory" class="btn">Import</button>
+          <button @click="importStory" class="btn-icon" title="Import">📥</button>
           <button
             v-if="Object.keys(adventure.Branches).length > 0"
             @click="openExportModal"
-            class="btn"
+            class="btn-icon"
+            title="Export"
           >
-            Export
+            📤
           </button>
-          <button @click="clearStory" class="btn btn-danger">Clear</button>
-          <input
-            type="file"
-            ref="fileInput"
-            @change="handleFileImport"
-            accept=".json"
-            style="display: none"
-          />
+          <button @click="clearStory" class="btn-icon btn-danger" title="Clear">🗑️</button>
         </div>
-        <div class="toolbar-right">
-          <button
-            v-if="Object.keys(adventure.Branches).length > 0"
-            @click="openConverter"
-            class="btn"
-          >
-            Convert old Story
-          </button>
-        </div>
+        <input
+          type="file"
+          ref="fileInput"
+          @change="handleFileImport"
+          accept=".json"
+          style="display: none"
+        />
       </div>
 
       <div
@@ -730,22 +740,17 @@ const drawConnection = (event: MouseEvent) => {
   const sourceX = sourceCoords.x + (isOutputConnection.value ? 250 : 0)
   const sourceY = sourceCoords.y + 50
 
-  // Get canvas position and scroll
-  const canvas = document.querySelector('.story-canvas')
-  if (!canvas) return
-
-  const scrollLeft = canvas.scrollLeft
-  const scrollTop = canvas.scrollTop
-
-  // Get the canvas content element to account for padding
+  // Get the canvas content element
   const canvasContent = document.querySelector('.canvas-content')
   if (!canvasContent) return
 
   const contentRect = canvasContent.getBoundingClientRect()
+  const canvas = document.querySelector('.story-canvas')
+  if (!canvas) return
 
-  // Calculate target coordinates relative to canvas, accounting for padding and zoom
-  const targetX = (event.clientX - contentRect.left + scrollLeft) / zoomLevel.value
-  const targetY = (event.clientY - contentRect.top + scrollTop) / zoomLevel.value
+  // Calculate target coordinates relative to the canvas content, accounting for zoom
+  const targetX = (event.clientX - contentRect.left) / zoomLevel.value
+  const targetY = (event.clientY - contentRect.top) / zoomLevel.value
 
   // Create temporary line
   const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
@@ -1102,12 +1107,25 @@ const stopCanvasDrag = () => {
   flex-direction: column;
 }
 
-.canvas-warnings {
+.canvas-toolbar {
   position: sticky;
   top: 0;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  padding: 0.75rem;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.canvas-warnings {
   background-color: white;
   z-index: 20;
   border-bottom: 1px solid #ddd;
+  flex-shrink: 0;
 }
 
 .warning-banner {
@@ -1133,39 +1151,62 @@ const stopCanvasDrag = () => {
   flex-direction: column;
 }
 
-.canvas-toolbar {
-  position: sticky;
-  top: 0;
-  background-color: #f5f5f5;
-  border-bottom: 1px solid #ddd;
-  padding: 0.75rem;
+.canvas-sidebar {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 10;
+  background-color: #f5f5f5;
+  border-right: 1px solid #ddd;
+  padding: 0.5rem;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 0;
-  flex-shrink: 0;
-}
-
-.toolbar-left {
-  display: flex;
-  align-items: center;
-  min-width: 300px;
-}
-
-.toolbar-center {
-  display: flex;
+  flex-direction: column;
   gap: 0.5rem;
+  border-radius: 0 8px 8px 0;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.btn-icon {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
+  font-size: 1.2rem;
+  transition: background-color 0.2s ease;
 }
 
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  min-width: 300px;
-  justify-content: flex-end;
+.btn-icon:hover {
+  background-color: #45a049;
+}
+
+.btn-icon.btn-danger {
+  background-color: #f44336;
+}
+
+.btn-icon.btn-danger:hover {
+  background-color: #d32f2f;
+}
+
+.btn-icon.btn-success {
+  background-color: #4caf50;
+}
+
+.btn-icon.btn-success:hover {
+  background-color: #388e3c;
 }
 
 .canvas-content {
