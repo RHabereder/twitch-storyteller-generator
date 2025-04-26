@@ -1,6 +1,22 @@
 <template>
   <div class="story-editor">
-    <div class="story-canvas" ref="canvas">
+    <div class="canvas-warnings" v-if="hasUnendedBranches || hasInfiniteLoops || hasUnsavedChanges">
+      <div v-if="hasUnendedBranches" class="warning-banner">
+        ⚠️ Warning: Some branches do not have endings! Please ensure all story paths lead to an
+        ending.
+      </div>
+
+      <div v-if="hasInfiniteLoops" class="warning-banner">
+        ⚠️ Warning: Infinite loops detected! Some branches create cycles that could lead to endless
+        repetition.
+      </div>
+
+      <div v-if="hasUnsavedChanges" class="warning-banner">
+        ⚠️ You have unsaved changes. Please save your story to preserve your progress.
+      </div>
+    </div>
+
+    <div class="story-canvas" ref="canvas" @mousedown="startCanvasDrag">
       <div class="canvas-toolbar">
         <div class="toolbar-left">
           <slot name="toolbar"></slot>
@@ -51,7 +67,9 @@
           transform: `scale(${zoomLevel})`,
           width: `${canvasWidth}px`,
           height: `${canvasHeight}px`,
+          transformOrigin: '0 0',
         }"
+        @mousedown="startCanvasDrag"
       >
         <!-- SVG for connections -->
         <svg
@@ -148,25 +166,6 @@
           </div>
         </div>
       </div>
-
-      <div
-        class="canvas-warnings"
-        v-if="hasUnendedBranches || hasInfiniteLoops || hasUnsavedChanges"
-      >
-        <div v-if="hasUnendedBranches" class="warning-banner">
-          ⚠️ Warning: Some branches do not have endings! Please ensure all story paths lead to an
-          ending.
-        </div>
-
-        <div v-if="hasInfiniteLoops" class="warning-banner">
-          ⚠️ Warning: Infinite loops detected! Some branches create cycles that could lead to
-          endless repetition.
-        </div>
-
-        <div v-if="hasUnsavedChanges" class="warning-banner">
-          ⚠️ You have unsaved changes. Please save your story to preserve your progress.
-        </div>
-      </div>
     </div>
 
     <ExportModal
@@ -240,6 +239,11 @@ let isDragging = false
 let currentBranch: AdventureBranch | null = null
 let startX = 0
 let startY = 0
+let isCanvasDragging = false
+let canvasStartX = 0
+let canvasStartY = 0
+let canvasScrollLeft = 0
+let canvasScrollTop = 0
 
 const isExportModalOpen = ref(false)
 const isConverterOpen = ref(false)
@@ -284,6 +288,9 @@ onMounted(() => {
   // Add wheel event listener
   if (canvas.value) {
     canvas.value.addEventListener('wheel', handleWheel, { passive: false })
+    canvas.value.addEventListener('mousedown', startCanvasDrag)
+    document.addEventListener('mousemove', onCanvasDrag)
+    document.addEventListener('mouseup', stopCanvasDrag)
   }
 
   // Check initial unsaved state
@@ -294,6 +301,9 @@ onUnmounted(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
   if (canvas.value) {
     canvas.value.removeEventListener('wheel', handleWheel)
+    canvas.value.removeEventListener('mousedown', startCanvasDrag)
+    document.removeEventListener('mousemove', onCanvasDrag)
+    document.removeEventListener('mouseup', stopCanvasDrag)
   }
 })
 
@@ -566,7 +576,23 @@ const handleWheel = (event: WheelEvent) => {
   const delta = event.deltaY
   const zoomFactor = 0.001
   const newZoom = Math.max(0.1, Math.min(2, zoomLevel.value - delta * zoomFactor))
+
+  // Get the mouse position relative to the canvas
+  const canvas = event.currentTarget as HTMLElement
+  const rect = canvas.getBoundingClientRect()
+  const mouseX = event.clientX - rect.left
+  const mouseY = event.clientY - rect.top
+
+  // Calculate the scroll position before zoom
+  const scrollX = canvas.scrollLeft + mouseX
+  const scrollY = canvas.scrollTop + mouseY
+
+  // Update zoom level
   zoomLevel.value = newZoom
+
+  // Adjust scroll position to keep the mouse point fixed
+  canvas.scrollLeft = scrollX * (newZoom / zoomLevel.value) - mouseX
+  canvas.scrollTop = scrollY * (newZoom / zoomLevel.value) - mouseY
 }
 
 // Compare current state with last export
@@ -1029,6 +1055,40 @@ const handleImportChoice = (choice: 'update' | 'new') => {
   isImportChoiceModalOpen.value = false
   importedStory.value = null
 }
+
+const startCanvasDrag = (event: MouseEvent) => {
+  // Only start canvas drag if we're clicking directly on the canvas-content or connections layer
+  const target = event.target as HTMLElement
+  if (
+    target.classList.contains('canvas-content') ||
+    target.classList.contains('connections-layer')
+  ) {
+    isCanvasDragging = true
+    canvasStartX = event.pageX
+    canvasStartY = event.pageY
+    if (canvas.value) {
+      canvasScrollLeft = canvas.value.scrollLeft
+      canvasScrollTop = canvas.value.scrollTop
+      canvas.value.style.cursor = 'grabbing'
+    }
+  }
+}
+
+const onCanvasDrag = (event: MouseEvent) => {
+  if (!isCanvasDragging || !canvas.value) return
+  event.preventDefault()
+  const dx = event.pageX - canvasStartX
+  const dy = event.pageY - canvasStartY
+  canvas.value.scrollLeft = canvasScrollLeft - dx
+  canvas.value.scrollTop = canvasScrollTop - dy
+}
+
+const stopCanvasDrag = () => {
+  if (isCanvasDragging && canvas.value) {
+    canvas.value.style.cursor = 'grab'
+  }
+  isCanvasDragging = false
+}
 </script>
 
 <style scoped>
@@ -1040,6 +1100,27 @@ const handleImportChoice = (choice: 'update' | 'new') => {
   color: #333;
   display: flex;
   flex-direction: column;
+}
+
+.canvas-warnings {
+  position: sticky;
+  top: 0;
+  background-color: white;
+  z-index: 20;
+  border-bottom: 1px solid #ddd;
+}
+
+.warning-banner {
+  background-color: #fff3cd;
+  color: #856404;
+  padding: 0.75rem;
+  text-align: center;
+  border-bottom: 1px solid #ffeeba;
+  font-weight: 500;
+}
+
+.warning-banner:last-child {
+  border-bottom: none;
 }
 
 .story-canvas {
@@ -1096,27 +1177,13 @@ const handleImportChoice = (choice: 'update' | 'new') => {
   transform-origin: 0 0;
   transition: transform 0.1s ease-out;
   padding: 0 2rem;
-}
-
-.canvas-warnings {
-  position: sticky;
-  bottom: 0;
-  background-color: white;
-  margin: 0 -2rem -2rem -2rem;
-  border-top: 1px solid #ddd;
-}
-
-.warning-banner {
-  background-color: #fff3cd;
-  color: #856404;
-  padding: 0.75rem;
-  text-align: center;
-  border-bottom: 1px solid #ffeeba;
-  font-weight: 500;
-}
-
-.warning-banner:last-child {
-  border-bottom: none;
+  min-width: 100%;
+  min-height: 100%;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 .connections-layer {
