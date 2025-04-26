@@ -12,7 +12,11 @@ declare module 'vue' {
     BranchEditor: typeof import('./src/components/BranchEditor.vue')['default']
     ChoiceModal: typeof import('./src/components/ChoiceModal.vue')['default']
     ExportModal: typeof import('./src/components/ExportModal.vue')['default']
+    ImportChoiceModal: typeof import('./src/components/ImportChoiceModal.vue')['default']
     StoryConverter: typeof import('./src/components/StoryConverter.vue')['default']
     StoryEditor: typeof import('./src/components/StoryEditor.vue')['default']
+    StoryNameModal: typeof import('./src/components/StoryNameModal.vue')['default']
+    StorySelector: typeof import('./src/components/StorySelector.vue')['default']
+    StorySettingsModal: typeof import('./src/components/StorySettingsModal.vue')['default']
   }
 }

@@ -1,106 +1,133 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import type { Adventure } from '@/types/adventure'
 import StoryEditor from './components/StoryEditor.vue'
-import BranchEditor from './components/BranchEditor.vue'
-import AdventureEditor from './components/AdventureEditor.vue'
-import StoryConverter from './components/StoryConverter.vue'
-import type { Adventure } from './types/adventure'
-import type { AdventureBranch } from './types/adventureBranch'
+import StorySelector from './components/StorySelector.vue'
+import StoryNameModal from './components/StoryNameModal.vue'
 
 const adventure = ref<Adventure>({
-  Title: 'My Adventure Story',
+  Title: '',
   UsesTTS: false,
   UsesVoicefiles: false,
   HasSubtitles: false,
-  SubtitleExtension: '',
-  VoiceFileExtension: '',
+  SubtitleExtension: '.srt',
+  VoiceFileExtension: '.mp3',
   Branches: {},
 })
 
-const selectedBranch = ref<AdventureBranch | null>(null)
-const isBranchEditorOpen = ref(false)
-const isAdventureEditorOpen = ref(false)
-const isStoryConverterOpen = ref(false)
+const storyCount = ref(0)
+const showStoryNameModal = ref(false)
+const isStoryNameModalOpen = ref(false)
 
-const handleBranchUpdate = (updatedBranch: AdventureBranch) => {
-  const updatedAdventure = {
-    ...adventure.value,
-    Branches: {
-      ...adventure.value.Branches,
-      [updatedBranch.ID]: updatedBranch,
-    },
+const handleStoryUpdate = (newStory: Adventure) => {
+  adventure.value = newStory
+}
+
+const handleAdventureUpdate = (newStory: Adventure) => {
+  adventure.value = newStory
+}
+
+const handleStoryImported = () => {
+  // Increment the story count to trigger a refresh of the story list
+  storyCount.value++
+}
+
+const handleModalStateChange = (isOpen: boolean) => {
+  isStoryNameModalOpen.value = isOpen
+}
+
+const handleNewStoryRequest = () => {
+  showStoryNameModal.value = true
+}
+
+const handleNewStory = (storyName: string) => {
+  // Create a new story
+  const newStory: Adventure = {
+    Title: storyName,
+    UsesTTS: false,
+    UsesVoicefiles: false,
+    HasSubtitles: false,
+    SubtitleExtension: '.srt',
+    VoiceFileExtension: '.mp3',
+    Branches: {},
   }
 
-  adventure.value = updatedAdventure
+  // Save to local storage with a unique key
+  const storyKey = `twitch-storyteller-story-${storyName}`
+  localStorage.setItem(storyKey, JSON.stringify(newStory))
+
+  // Update the adventure and close the modal
+  adventure.value = newStory
+  storyCount.value++
+  closeStoryNameModal()
 }
 
-const openBranchEditor = (branch: AdventureBranch) => {
-  selectedBranch.value = branch
-  isBranchEditorOpen.value = true
+const closeStoryNameModal = () => {
+  showStoryNameModal.value = false
+  isStoryNameModalOpen.value = false
 }
 
-const closeBranchEditor = () => {
-  isBranchEditorOpen.value = false
-  selectedBranch.value = null
-}
+onMounted(() => {
+  // Load story names from local storage
+  const storyNames: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key && key.startsWith('twitch-storyteller-story-')) {
+      storyNames.push(key.replace('twitch-storyteller-story-', ''))
+    }
+  }
 
-const openAdventureEditor = () => {
-  isAdventureEditorOpen.value = true
-}
-
-const closeAdventureEditor = () => {
-  isAdventureEditorOpen.value = false
-}
-
-const openStoryConverter = () => {
-  isStoryConverterOpen.value = true
-}
-
-const closeStoryConverter = () => {
-  isStoryConverterOpen.value = false
-}
+  // If no stories exist, show the new story modal
+  if (storyNames.length === 0) {
+    showStoryNameModal.value = true
+    isStoryNameModalOpen.value = true
+  } else {
+    // Load the first story if available
+    const firstStoryKey = `twitch-storyteller-story-${storyNames[0]}`
+    const savedStory = localStorage.getItem(firstStoryKey)
+    if (savedStory) {
+      try {
+        const parsedStory = JSON.parse(savedStory)
+        adventure.value = parsedStory
+      } catch (error) {
+        console.error('Error loading saved story:', error)
+      }
+    }
+  }
+})
 </script>
 
 <template>
   <div class="app-container">
     <header>
       <h1>NLith's Twitch Storytelling Editor</h1>
-      <div class="header-controls">
-        <button class="btn" @click="openStoryConverter">Convert Story</button>
-        <button class="btn" @click="openAdventureEditor">Edit Adventure</button>
-      </div>
     </header>
+
+    <div class="story-selector-row">
+      <StorySelector
+        :current-story="adventure"
+        :story-count="storyCount"
+        @update:story="handleStoryUpdate"
+        @modal-state-change="handleModalStateChange"
+        @request-new-story="handleNewStoryRequest"
+      />
+    </div>
 
     <main>
       <StoryEditor
         :adventure="adventure"
-        @update:adventure="adventure = $event"
-        @edit-branch="openBranchEditor"
+        :is-modal-open="isStoryNameModalOpen"
+        @update:adventure="handleAdventureUpdate"
+        @story-imported="handleStoryImported"
       />
     </main>
 
-    <BranchEditor
-      v-if="isBranchEditorOpen"
-      :is-open="isBranchEditorOpen"
-      :branch="selectedBranch"
-      :adventure="adventure"
-      @update:branch="handleBranchUpdate"
-      @close="closeBranchEditor"
-    />
-
-    <AdventureEditor
-      v-if="isAdventureEditorOpen"
-      :is-open="isAdventureEditorOpen"
-      :adventure="adventure"
-      @update:adventure="adventure = $event"
-      @close="closeAdventureEditor"
-    />
-
-    <StoryConverter
-      v-if="isStoryConverterOpen"
-      :is-open="isStoryConverterOpen"
-      @update:adventure="adventure = $event"
-      @close="closeStoryConverter"
+    <StoryNameModal
+      v-if="showStoryNameModal"
+      :is-open="showStoryNameModal"
+      :existing-names="[]"
+      @save="handleNewStory"
+      @close="closeStoryNameModal"
     />
   </div>
 </template>
@@ -115,10 +142,10 @@ body {
 }
 
 .app-container {
-  width: 100vw;
-  height: 100vh;
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  width: 100vw;
   overflow: hidden;
 }
 
@@ -126,9 +153,7 @@ header {
   padding: 1rem;
   background-color: #f5f5f5;
   border-bottom: 1px solid #ddd;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  text-align: center;
   flex-shrink: 0;
 }
 
@@ -136,6 +161,13 @@ header h1 {
   margin: 0;
   font-size: 1.5rem;
   color: #333;
+}
+
+.story-selector-row {
+  padding: 1rem;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  flex-shrink: 0;
 }
 
 main {
@@ -155,10 +187,5 @@ main {
 
 .btn:hover {
   background-color: #45a049;
-}
-
-.header-controls {
-  display: flex;
-  gap: 0.5rem;
 }
 </style>

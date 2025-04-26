@@ -1,8 +1,10 @@
 <template>
   <div class="story-editor">
     <div class="editor-header">
-      <h2>{{ adventure.Title }}</h2>
-      <div class="editor-controls">
+      <div class="header-left">
+        <h2>{{ adventure.Title }}</h2>
+      </div>
+      <div class="header-right">
         <button v-if="Object.keys(adventure.Branches).length === 0" @click="addBranch" class="btn">
           Add Root Branch
         </button>
@@ -12,6 +14,13 @@
           class="btn"
         >
           Export
+        </button>
+        <button
+          v-if="Object.keys(adventure.Branches).length > 0"
+          @click="openConverter"
+          class="btn"
+        >
+          Convert
         </button>
         <button @click="saveStory" class="btn" :class="{ 'btn-success': !hasUnsavedChanges }">
           {{ hasUnsavedChanges ? 'Save' : 'Story Saved' }}
@@ -155,6 +164,14 @@
       @close="closeExportModal"
     />
 
+    <StoryConverter
+      v-if="isConverterOpen"
+      :is-open="isConverterOpen"
+      :adventure="adventure"
+      @close="closeConverter"
+      @update:story="handleStoryUpdate"
+    />
+
     <BranchEditor
       v-if="isBranchEditorOpen"
       :is-open="isBranchEditorOpen"
@@ -173,8 +190,25 @@
       @close="isChoiceModalOpen = false"
     />
 
+    <ImportChoiceModal
+      v-if="isImportChoiceModalOpen"
+      @choice="handleImportChoice"
+      @close="isImportChoiceModalOpen = false"
+    />
+
     <!-- Add floating panel -->
-    <div class="floating-panel" ref="floatingPanel">
+    <div
+      class="floating-panel"
+      ref="floatingPanel"
+      v-if="
+        !props.isModalOpen &&
+        !isImportChoiceModalOpen &&
+        !isExportModalOpen &&
+        !isConverterOpen &&
+        !isBranchEditorOpen &&
+        !isChoiceModalOpen
+      "
+    >
       <div class="panel-header" @mousedown="startPanelDrag">
         <span>Tools</span>
       </div>
@@ -192,14 +226,18 @@ import type { AdventureBranch, Choice } from '@/types/adventureBranch'
 import ExportModal from './ExportModal.vue'
 import BranchEditor from './BranchEditor.vue'
 import ChoiceModal from './ChoiceModal.vue'
+import StoryConverter from './StoryConverter.vue'
+import ImportChoiceModal from './ImportChoiceModal.vue'
 
 const props = defineProps<{
   adventure: Adventure
+  isModalOpen?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:adventure', value: Adventure): void
   (e: 'edit-branch', value: AdventureBranch): void
+  (e: 'story-imported'): void
 }>()
 
 const canvas = ref<HTMLElement | null>(null)
@@ -213,6 +251,7 @@ let startX = 0
 let startY = 0
 
 const isExportModalOpen = ref(false)
+const isConverterOpen = ref(false)
 const isBranchEditorOpen = ref(false)
 const selectedBranch = ref({} as AdventureBranch)
 const isChoiceModalOpen = ref(false)
@@ -230,6 +269,9 @@ const floatingPanel = ref<HTMLElement | null>(null)
 let isPanelDragging = false
 let panelStartX = 0
 let panelStartY = 0
+
+const isImportChoiceModalOpen = ref(false)
+const importedStory = ref<Adventure | null>(null)
 
 onMounted(() => {
   const savedState = loadState()
@@ -390,23 +432,23 @@ const handleFileImport = (event: Event) => {
   reader.onload = (e) => {
     try {
       const content = e.target?.result as string
-      const importedStory = JSON.parse(content)
+      const parsedStory = JSON.parse(content)
 
       // Validate the imported story structure
-      if (!isValidStory(importedStory)) {
+      if (!isValidStory(parsedStory)) {
         alert('Invalid story format. Please check the JSON file.')
         return
       }
 
       // Convert the imported story to the new format
-      const convertedStory = convertImportedStory(importedStory)
+      const convertedStory = convertImportedStory(parsedStory)
+      importedStory.value = convertedStory
+      isImportChoiceModalOpen.value = true
 
       // Reset file input
       if (input) {
         input.value = ''
       }
-
-      emit('update:adventure', convertedStory)
     } catch (error) {
       console.error('Error parsing JSON:', error)
       alert('Error parsing JSON file. Please check the file format.')
@@ -958,6 +1000,44 @@ const addBranchAtMouse = (event: MouseEvent) => {
 
   emit('update:adventure', updatedAdventure)
 }
+
+const handleStoryUpdate = (newStory: Adventure) => {
+  emit('update:adventure', newStory)
+}
+
+const openConverter = () => {
+  isConverterOpen.value = true
+}
+
+const closeConverter = () => {
+  isConverterOpen.value = false
+}
+
+const handleImportChoice = (choice: 'update' | 'new') => {
+  if (!importedStory.value) return
+
+  if (choice === 'update') {
+    emit('update:adventure', importedStory.value)
+  } else {
+    // Create a new story with the imported data
+    const newStory: Adventure = {
+      ...importedStory.value,
+      Title: `${importedStory.value.Title} (Imported)`,
+    }
+
+    // Save the new story to local storage with a unique key that includes a timestamp
+    const timestamp = new Date().getTime()
+    const storyKey = `twitch-storyteller-story-${newStory.Title}-${timestamp}`
+    localStorage.setItem(storyKey, JSON.stringify(newStory))
+
+    emit('update:adventure', newStory)
+    // Emit an event to notify that a story was imported
+    emit('story-imported')
+  }
+
+  isImportChoiceModalOpen.value = false
+  importedStory.value = null
+}
 </script>
 
 <style scoped>
@@ -977,6 +1057,17 @@ const addBranchAtMouse = (event: MouseEvent) => {
   background-color: #f5f5f5;
   border-bottom: 1px solid #ddd;
   flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.header-right {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .editor-header h2 {
