@@ -15,9 +15,13 @@
             type="text"
             class="form-control"
             :class="{ 'input-error': hasIdError }"
+            :disabled="editedBranch.ID === 'start'"
             @input="validateId"
           />
           <div v-if="hasIdError" class="error-message">{{ idError }}</div>
+          <div v-if="editedBranch.ID === 'start'" class="disabled-hint">
+            Root branch ID cannot be changed
+          </div>
         </div>
 
         <div class="form-group">

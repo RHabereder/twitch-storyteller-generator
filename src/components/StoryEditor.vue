@@ -125,6 +125,7 @@
             'ending-branch': branch.IsEnd,
             'warning-branch': isWarningBranch(branch),
             'loop-branch': isInLoop(branch.ID),
+            'root-branch': branch.ID === 'start',
           }"
           :style="{
             left: getBranchCoordinates(branch).x + 'px',
@@ -378,6 +379,16 @@ const editBranch = (branch: AdventureBranch) => {
 }
 
 const deleteBranch = (branchToDelete: AdventureBranch) => {
+  // Prevent deletion of root branch
+  if (branchToDelete.ID === 'start') {
+    alert('Cannot delete the root branch. It is required for the story structure.')
+    return
+  }
+
+  if (!confirm(`Are you sure you want to delete the branch "${branchToDelete.Title}"?`)) {
+    return
+  }
+
   // Create a copy of branches without the deleted branch
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { [branchToDelete.ID]: removed, ...remainingBranches } = props.adventure.Branches
@@ -858,15 +869,18 @@ const handleChoiceSave = (choice: Choice) => {
   // Don't clear sourceBranch and targetBranch here, let the modal close event handle it
 }
 
-const removeConnection = (branch: AdventureBranch, choice: Choice) => {
-  if (!confirm(`Are you sure you want to remove the connection "${choice.Label}"?`)) {
+const removeConnection = (branch: AdventureBranch, choice?: Choice) => {
+  if (!choice) {
+    console.warn('No choice provided to removeConnection')
     return
   }
 
   // Create a new branch with the choice removed
   const updatedBranch = {
     ...branch,
-    Choices: branch.Choices.filter((c) => c.Target !== choice.Target),
+    Choices: branch.Choices.filter(
+      (c) => !(c.Target === choice.Target && c.Label === choice.Label),
+    ),
   }
 
   // Create a new adventure with the updated branch
@@ -880,6 +894,7 @@ const removeConnection = (branch: AdventureBranch, choice: Choice) => {
 
   // Emit the update
   emit('update:adventure', updatedAdventure)
+  hasUnsavedChanges.value = true
 }
 
 const getConnectionColor = (type: string): string => {
@@ -1094,6 +1109,39 @@ const stopCanvasDrag = () => {
   }
   isCanvasDragging = false
 }
+
+// Add watcher for root branch
+watch(
+  () => props.adventure.Branches,
+  (newBranches) => {
+    // Check if root branch exists
+    if (!newBranches['start']) {
+      // Create new root branch if it doesn't exist
+      const rootBranch: AdventureBranch = {
+        ID: 'start',
+        Title: 'Story Start',
+        Text: 'This is the beginning of your story...',
+        IsEnd: false,
+        Choices: [],
+        x: 100,
+        y: 100,
+      }
+
+      // Create updated adventure with root branch
+      const updatedAdventure = {
+        ...props.adventure,
+        Branches: {
+          ...newBranches,
+          start: rootBranch,
+        },
+      }
+
+      // Emit the update
+      emit('update:adventure', updatedAdventure)
+    }
+  },
+  { deep: true },
+)
 </script>
 
 <style scoped>
@@ -1251,6 +1299,15 @@ const stopCanvasDrag = () => {
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+}
+
+.branch-node.root-branch {
+  background-color: #e3f2fd;
+  border-color: #1976d2;
+}
+
+.branch-node.root-branch .branch-header h3 {
+  color: #1565c0;
 }
 
 .branch-node.ending-branch {

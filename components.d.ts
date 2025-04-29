@@ -17,6 +17,5 @@ declare module 'vue' {
     StoryEditor: typeof import('./src/components/StoryEditor.vue')['default']
     StoryNameModal: typeof import('./src/components/StoryNameModal.vue')['default']
     StorySelector: typeof import('./src/components/StorySelector.vue')['default']
-    StorySettingsModal: typeof import('./src/components/StorySettingsModal.vue')['default']
   }
 }
