@@ -8,7 +8,14 @@
 
       <div class="modal-body">
         <div class="form-group">
-          <label for="branch-id">ID</label>
+          <label for="branch-id">
+            ID
+            <span
+              class="help-icon"
+              title="The unique identifier for this branch. It will be automatically generated from the title in snake_case format."
+              >❓</span
+            >
+          </label>
           <input
             id="branch-id"
             v-model="editedBranch.ID"
@@ -25,12 +32,26 @@
         </div>
 
         <div class="form-group">
-          <label for="branch-title">Title</label>
+          <label for="branch-title">
+            Title
+            <span
+              class="help-icon"
+              title="The display name of this branch. This will be shown in the story canvas and used to generate the branch ID."
+              >❓</span
+            >
+          </label>
           <input id="branch-title" v-model="editedBranch.Title" type="text" class="form-control" />
         </div>
 
         <div class="form-group">
-          <label for="branch-text">Content</label>
+          <label for="branch-text">
+            Content
+            <span
+              class="help-icon"
+              title="The main text content of this branch. This is what will be displayed to the reader when they reach this point in the story."
+              >❓</span
+            >
+          </label>
           <textarea
             id="branch-text"
             v-model="editedBranch.Text"
@@ -43,6 +64,11 @@
           <label class="checkbox-label">
             <input type="checkbox" v-model="editedBranch.IsEnd" :disabled="isFirstBranch" />
             This is an ending branch
+            <span
+              class="help-icon"
+              title="Mark this branch as an ending. Ending branches cannot have connections to other branches and represent the conclusion of a story path."
+              >❓</span
+            >
             <span v-if="isFirstBranch" class="disabled-hint"
               >(First branch cannot be an ending)</span
             >
@@ -299,5 +325,22 @@ const closeModal = () => {
   color: #f44336;
   font-size: 0.8rem;
   margin-top: 0.25rem;
+}
+
+.help-icon {
+  display: inline-block;
+  margin-left: 0.5rem;
+  color: #666;
+  cursor: help;
+  font-size: 0.9em;
+  transition: color 0.2s ease;
+}
+
+.help-icon:hover {
+  color: #333;
+}
+
+.checkbox-label .help-icon {
+  margin-left: 0.25rem;
 }
 </style>

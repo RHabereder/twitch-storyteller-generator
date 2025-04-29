@@ -323,10 +323,12 @@ const allBranches = computed(() => {
   return Object.values(props.adventure.Branches)
 })
 
-const generateBranchId = (): string => {
-  const existingIds = Object.keys(props.adventure.Branches).map((id) => parseInt(id))
-  const maxId = Math.max(0, ...existingIds)
-  return (maxId + 1).toString()
+// Helper function to convert string to snake_case
+const toSnakeCase = (str: string): string => {
+  return str
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/(^_|_$)/g, '')
 }
 
 // Add helper function to get branch coordinates
@@ -525,6 +527,11 @@ const isFirstBranch = (branch: AdventureBranch | null): boolean => {
 }
 
 const handleBranchUpdate = (updatedBranch: AdventureBranch) => {
+  // Generate new ID based on title if it's not the start branch
+  if (updatedBranch.ID !== 'start') {
+    updatedBranch.ID = toSnakeCase(updatedBranch.Title)
+  }
+
   // Create a copy of branches without the old branch (if ID changed)
   const remainingBranches = { ...props.adventure.Branches }
   delete remainingBranches[selectedBranch.value.ID]
@@ -1017,9 +1024,10 @@ const addBranchAtMouse = (event: MouseEvent) => {
   const x = (event.clientX - contentRect.left + scrollLeft) / zoomLevel.value
   const y = (event.clientY - contentRect.top + scrollTop) / zoomLevel.value
 
+  const title = 'New Branch'
   const newBranch: AdventureBranch = {
-    ID: generateBranchId(),
-    Title: 'New Branch',
+    ID: toSnakeCase(title),
+    Title: title,
     Text: 'Enter your story text here...',
     IsEnd: false,
     Choices: [],
@@ -1137,6 +1145,50 @@ watch(
       }
 
       // Emit the update
+      emit('update:adventure', updatedAdventure)
+    }
+  },
+  { deep: true },
+)
+
+// Add watcher for branch titles to update IDs
+watch(
+  () => props.adventure.Branches,
+  (newBranches) => {
+    let hasChanges = false
+    const updatedBranches = { ...newBranches }
+
+    // Check each branch's title and update ID if needed
+    Object.entries(newBranches).forEach(([id, branch]) => {
+      if (id !== 'start') {
+        // Don't change the start branch ID
+        const newId = toSnakeCase(branch.Title)
+        if (newId !== id) {
+          // Update any choices that reference this branch
+          Object.values(updatedBranches).forEach((otherBranch) => {
+            if (otherBranch.Choices) {
+              otherBranch.Choices.forEach((choice) => {
+                if (choice.Target === id) {
+                  choice.Target = newId
+                }
+              })
+            }
+          })
+
+          // Move the branch to the new ID
+          updatedBranches[newId] = { ...branch, ID: newId }
+          delete updatedBranches[id]
+          hasChanges = true
+        }
+      }
+    })
+
+    // Only emit update if changes were made
+    if (hasChanges) {
+      const updatedAdventure = {
+        ...props.adventure,
+        Branches: updatedBranches,
+      }
       emit('update:adventure', updatedAdventure)
     }
   },
