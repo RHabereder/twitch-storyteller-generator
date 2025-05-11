@@ -370,7 +370,7 @@ const addBranch = () => {
     Text: 'Enter your story text here...',
     IsEnd: false,
     Choices: [],
-    x: 100 + Object.keys(props.adventure.Branches).length * 300,
+    x: 100 + Object.keys(props.adventure.Branches).length * 5,
     y: 100,
   }
 
