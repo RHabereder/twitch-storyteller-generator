@@ -8,30 +8,6 @@
 
       <div class="modal-body">
         <div class="form-group">
-          <label for="branch-id">
-            ID
-            <span
-              class="help-icon"
-              title="The unique identifier for this branch. It will be automatically generated from the title in snake_case format."
-              >❓</span
-            >
-          </label>
-          <input
-            id="branch-id"
-            v-model="editedBranch.ID"
-            type="text"
-            class="form-control"
-            :class="{ 'input-error': hasIdError }"
-            :disabled="editedBranch.ID === 'start'"
-            @input="validateId"
-          />
-          <div v-if="hasIdError" class="error-message">{{ idError }}</div>
-          <div v-if="editedBranch.ID === 'start'" class="disabled-hint">
-            Root branch ID cannot be changed
-          </div>
-        </div>
-
-        <div class="form-group">
           <label for="branch-title">
             Title
             <span

@@ -139,7 +139,7 @@ const handleExport = async () => {
       // Generate subtitles for each branch
       Object.entries(props.adventure.Branches).forEach(([id, branch]) => {
         const subtitleContent = generateSubtitleContent(branch)
-        const fileName = `branch-${id}.${props.adventure.SubtitleExtension}`
+        const fileName = `${id}${props.adventure.SubtitleExtension}`
         zip.file(fileName, subtitleContent)
       })
 
@@ -176,9 +176,9 @@ const handleExport = async () => {
 }
 
 const generateSubtitleContent = (branch: AdventureBranch) => {
-  let content = branch.Text
+  let content = branch.Text.replace(/\./g, '.\n')
   if (subtitleFormat.value === 'srt') {
-    content = `1\n00:00:00,000 --> 00:00:05,000\n${branch.Text}\n\n`
+    content = `1\n00:00:00,000 --> 00:00:05,000\n${content}\n\n`
   }
   return content
 }

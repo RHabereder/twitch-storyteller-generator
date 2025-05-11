@@ -42,7 +42,7 @@
           >
             ➕
           </button>
-          <button class="btn-icon" @click="addBranchAtMouse" title="Add Branch">➕</button>
+          <button class="btn-icon" @click="addBranch" title="Add Branch">➕</button>
           <button
             @click="saveStory"
             class="btn-icon"
@@ -354,9 +354,19 @@ const getTargetBranchCoordinates = (targetId: string) => {
 }
 
 const addBranch = () => {
+  const title = 'New Branch'
+  let id = 'new_branch'
+
+  // Add counter to ID if it already exists
+  let counter = 1
+  while (props.adventure.Branches[id + (counter > 1 ? `_${counter}` : '')]) {
+    counter++
+  }
+  id = id + (counter > 1 ? `_${counter}` : '')
+
   const newBranch: AdventureBranch = {
-    ID: 'start',
-    Title: 'New Branch',
+    ID: id,
+    Title: title,
     Text: 'Enter your story text here...',
     IsEnd: false,
     Choices: [],
@@ -529,12 +539,26 @@ const isFirstBranch = (branch: AdventureBranch | null): boolean => {
 const handleBranchUpdate = (updatedBranch: AdventureBranch) => {
   // Generate new ID based on title if it's not the start branch
   if (updatedBranch.ID !== 'start') {
-    updatedBranch.ID = toSnakeCase(updatedBranch.Title)
+    let newId = toSnakeCase(updatedBranch.Title)
+
+    // Add counter to ID if it already exists
+    let counter = 1
+    while (
+      props.adventure.Branches[newId + (counter > 1 ? `_${counter}` : '')] &&
+      props.adventure.Branches[newId + (counter > 1 ? `_${counter}` : '')].ID !==
+        selectedBranch.value.ID
+    ) {
+      counter++
+    }
+    newId = newId + (counter > 1 ? `_${counter}` : '')
+    updatedBranch.ID = newId
   }
 
   // Create a copy of branches without the old branch (if ID changed)
   const remainingBranches = { ...props.adventure.Branches }
-  delete remainingBranches[selectedBranch.value.ID]
+  if (selectedBranch.value.ID !== updatedBranch.ID) {
+    delete remainingBranches[selectedBranch.value.ID]
+  }
 
   // Create updated branches with the new branch
   const updatedBranches = {
@@ -1025,8 +1049,15 @@ const addBranchAtMouse = (event: MouseEvent) => {
   const y = (event.clientY - contentRect.top + scrollTop) / zoomLevel.value
 
   const title = 'New Branch'
+  let id = toSnakeCase(title)
+  // Add counter to ID if it already exists
+  let counter = allBranches.value.length + 1
+  // Add counter to ID if it already exists
+  id = id + (counter > 1 ? `_${counter}` : '')
+  counter++
+
   const newBranch: AdventureBranch = {
-    ID: toSnakeCase(title),
+    ID: id,
     Title: title,
     Text: 'Enter your story text here...',
     IsEnd: false,
@@ -1123,8 +1154,8 @@ watch(
   () => props.adventure.Branches,
   (newBranches) => {
     // Check if root branch exists
-    if (!newBranches['start']) {
-      // Create new root branch if it doesn't exist
+    if (!newBranches['start'] && Object.keys(newBranches).length === 0) {
+      // Create new root branch if it doesn't exist and there are no other branches
       const rootBranch: AdventureBranch = {
         ID: 'start',
         Title: 'Story Start',
@@ -1160,8 +1191,8 @@ watch(
 
     // Check each branch's title and update ID if needed
     Object.entries(newBranches).forEach(([id, branch]) => {
-      if (id !== 'start') {
-        // Don't change the start branch ID
+      if (id !== 'start' && !id.startsWith('new_branch')) {
+        // Don't change the start branch ID or new branches
         const newId = toSnakeCase(branch.Title)
         if (newId !== id) {
           // Update any choices that reference this branch
